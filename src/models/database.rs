@@ -50,17 +50,19 @@ impl Database {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
         if parts.len() < 5 {
-            // Righe malformate vengono ignorate
+            // Too short line are not considered.
             return;
         }
 
-        let id: String = parts[1].to_string();
+        let id: u32 = parts[1].parse::<u32>().unwrap_or(0);  // decimal id
+        let id_hex: String = format!("0x{:X}", id);  // hexadecimal id
         let name: String = parts[2].trim_end_matches(':').to_string();
         let byte_length: usize = parts[3].parse::<usize>().unwrap_or(0);
         let sender_node: String = parts[4].to_string();
 
         let msg: Message = Message {
             id,
+            id_hex,
             name,
             byte_length,
             sender_node,
@@ -154,32 +156,32 @@ impl Database {
 
     pub fn parse_value_table(&mut self, line: &str) {
         // remove whitespace at end and beginning
-        let line = line.trim_start();
-    
+        let line: &str = line.trim_start();
+
         // Example: VAL_ <message_id> <signal_name> <val1> "<descr1>" <val2> "<descr2>" ... ;
         let mut parts = line.split_whitespace();
-    
+
         // Skip "VAL_"
         parts.next();
-    
-        // Messagge ID
-        let message_id: String = parts.next().unwrap_or("").to_string();
-    
+
+        // Message ID come numero decimale
+        let message_id: u32 = parts.next().unwrap_or("").parse::<u32>().unwrap_or(0);
+
         // Signal Name
         let signal_name: String = parts.next().unwrap_or("").to_string();
-    
-        // rest of row contains couples: <value> "<description>"
+
+        // Rest of row contains couples: <value> "<description>"
         let mut remaining: String = parts.collect::<Vec<_>>().join(" ");
-    
+
         // Remove final ";"
         remaining = remaining.trim_end_matches(';').trim().to_string();
-    
+
         // Parsing couples: <value> "<description>"
-        let mut value_table: HashMap<i32, String> = std::collections::HashMap::new();
+        let mut value_table: HashMap<i32, String> = HashMap::new();
         let mut tokens = remaining.split('"').map(|s| s.trim());
-    
+
         while let Some(before) = tokens.next() {
-            let before = before.trim();
+            let before: &str = before.trim();
             if before.is_empty() {
                 continue;
             }
@@ -191,12 +193,13 @@ impl Database {
                 }
             }
         }
-    
+        
         // Add value table to right message and signal
         if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {
             if let Some(signal) = msg.signals.iter_mut().find(|s| s.name == signal_name) {
                 signal.value_table = value_table;
             }
         }
-    }    
+    }
+    
 }

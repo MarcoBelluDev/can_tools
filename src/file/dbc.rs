@@ -25,10 +25,22 @@ pub fn parse(path: &str) -> Result<Database, String> {
         } else if line.to_lowercase().starts_with("bu_") {
             db.parse_nodes(line);
         } else if line.to_lowercase().starts_with("bo_") {
+            if line.split_whitespace().count() < 5 {
+                // row with few parts: skip
+                continue;
+            }
             db.parse_messages(line);
-        } else if line.trim_start().to_lowercase().starts_with("sg_") {
+        } else if line.to_lowercase().starts_with("sg_") {
+            if line.split_whitespace().count() < 5 {
+                // row with few parts: skip
+                continue;
+            }
             db.parse_signal(line);
-        } else if line.starts_with("val_") {
+        } else if line.to_lowercase().starts_with("val_") {
+            if line.split_whitespace().count() < 3 {
+                // row with few parts: skip
+                continue;
+            }
             db.parse_value_table(line);
         }
         // else if line.starts_with("CM_") { ... }
