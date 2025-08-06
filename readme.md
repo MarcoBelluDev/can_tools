@@ -65,40 +65,40 @@ fn main() -> Result<(), String> {
 ┌───────────────────────────────────────┐
 │               Database                │
 │───────────────────────────────────────│
-│ version: String                        │
-│ bit_timing: String                     │
-│ nodes: Vec<Node>                       │
-│ messages: Vec<Message>                 │
+│ version: String                       │
+│ bit_timing: String                    │
+│ nodes: Vec<Node>                      │
+│ messages: Vec<Message>                │
 └───────────────────────┬───────────────┘
                         │
                         ▼
 ┌───────────────────────────────────────┐
 │               Message                 │
 │───────────────────────────────────────│
-│ id: u64                                │
-│ id_hex: String                         │
-│ name: String                           │
-│ byte_length: usize                     │
-│ sender_nodes: Vec<Node>                │
-│ signals: Vec<Signal>                   │
+│ id: u64                               │
+│ id_hex: String                        │
+│ name: String                          │
+│ byte_length: usize                    │
+│ sender_nodes: Vec<Node>               │
+│ signals: Vec<Signal>                  │
 └───────────────────────┬───────────────┘
                         │
                         ▼
 ┌───────────────────────────────────────┐
 │                Signal                 │
 │───────────────────────────────────────│
-│ name: String                           │
-│ bit_start: usize                       │
-│ bit_length: usize                      │
-│ endian: usize                          │
-│ sign: usize                            │
-│ factor: f64                            │
-│ offset: f64                            │
-│ min: f64                               │
-│ max: f64                               │
-│ unit_of_measurement: String            │
-│ receiver_nodes: Vec<Node>              │
-│ value_table: HashMap<i32, String>      │
+│ name: String                          │
+│ bit_start: usize                      │
+│ bit_length: usize                     │
+│ endian: usize                         │
+│ sign: usize                           │
+│ factor: f64                           │
+│ offset: f64                           │
+│ min: f64                              │
+│ max: f64                              │
+│ unit_of_measurement: String           │
+│ receiver_nodes: Vec<Node>             │
+│ value_table: HashMap<i32, String>     │
 └───────────────────────────────────────┘
 
 Node: represents a CAN ECU (sender or receiver)
