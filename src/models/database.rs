@@ -45,6 +45,18 @@ impl Database {
             .find(|msg| msg.name.eq_ignore_ascii_case(name))
     }
 
+    pub fn get_nodes_by_name(&self, name: &str) -> Option<&Node> {
+        self.nodes
+            .iter()
+            .find(|node| node.name.eq_ignore_ascii_case(name))
+    }
+
+    pub fn get_nodes_by_name_mut(&mut self, name: &str) -> Option<&mut Node> {
+        self.nodes
+            .iter_mut()
+            .find(|node| node.name.eq_ignore_ascii_case(name))
+    }
+
     pub(crate) fn parse_version(&mut self, line: &str) {
         // Example: VERSION "1.0"
         self.version = line
@@ -75,6 +87,7 @@ impl Database {
         for part in parts.iter().skip(1) {
             self.nodes.push(Node {
                 name: part.to_string(),
+                comment: "".to_string(), // initialize empty comment
             });
         }
     }
@@ -94,6 +107,7 @@ impl Database {
         let byte_length: usize = parts[3].parse::<usize>().unwrap_or(0);
         let sender_nodes: Vec<Node> = vec![Node {
             name: parts[4].to_string(),
+            comment: "".to_string(),
         }];
 
         let msg: Message = Message {
@@ -185,6 +199,7 @@ impl Database {
             .filter(|s| !s.is_empty())
             .map(|s| Node {
                 name: s.trim().to_string(),
+                comment: "".to_string(),
             })
             .collect();
 
@@ -220,24 +235,25 @@ impl Database {
         let id_str = parts.next().unwrap_or("").trim();
         let nodes_str = parts.next().unwrap_or("").trim().trim_end_matches(';');
 
-        // Converte ID in u64
+        // Convert ID in u64
         let id: u64 = match id_str.parse() {
             Ok(v) => v,
             Err(_) => return, // se non è un numero valido, esce
         };
 
-        // Trova messaggio corrispondente
+        // Find message by id
         if let Some(msg) = self.get_message_by_id_mut(id) {
-            // Split nodi separati da virgola
+            // Split nodes by comma ,
             for node_name in nodes_str
                 .split(',')
                 .map(|n| n.trim())
                 .filter(|n| !n.is_empty())
             {
-                // Controlla se già presente
+                // check if already present
                 if !msg.sender_nodes.iter().any(|n| n.name == node_name) {
                     msg.sender_nodes.push(Node {
                         name: node_name.to_string(),
+                        comment: "".to_string(),
                     });
                 }
             }
@@ -339,6 +355,55 @@ impl Database {
             .join("\n");
     }
 
+    pub(crate) fn parse_node_comments(&mut self, text: &str) {
+        // CM_ BU_ NodeName "Comment..."
+        
+        let mut parts = text.split_whitespace();
+        parts.next(); // skip CM_
+        parts.next(); // skip BU_
+
+        let node_name = match parts.next() {
+            Some(name) => name,
+            None => return,
+        };
+
+        // Find quotes ""
+        let first_quote = match text.find('"') {
+            Some(pos) => pos,
+            None => return,
+        };
+        let last_quote = match text.rfind('"') {
+            Some(pos) if pos > first_quote => pos,
+            _ => return,
+        };
+
+        // Take comment and normalize whitespaces
+        let comment = text[first_quote + 1..last_quote]
+            .lines()
+            .map(|l| l.trim_start())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Update in Database.nodes
+        if let Some(node) = self.get_nodes_by_name_mut(node_name) {
+            node.comment = comment.clone();
+        }
+
+        for msg in &mut self.messages {
+            // // Update in sender_nodes for all Messages
+            if let Some(sender) = msg.get_sender_nodes_by_name_mut(node_name) {
+                sender.comment = comment.clone();
+            }
+
+            // Update in receiver_nodes for all Signals
+            for sig in &mut msg.signals {
+                if let Some(receiver) = sig.get_receiver_nodes_by_name_mut(node_name) {
+                    receiver.comment = comment.clone();
+                }
+            }
+        }
+    }
+
     pub(crate) fn parse_value_table(&mut self, line: &str) {
         // remove whitespace at end and beginning
         let line: &str = line.trim_start();
@@ -417,13 +482,16 @@ mod tests {
             db.nodes,
             vec![
                 Node {
-                    name: "Motor".to_string()
+                    name: "Motor".to_string(),
+                    comment: "".to_string(),
                 },
                 Node {
-                    name: "Infotainment".to_string()
+                    name: "Infotainment".to_string(),
+                    comment: "".to_string(),
                 },
                 Node {
-                    name: "Gateway".to_string()
+                    name: "Gateway".to_string(),
+                    comment: "".to_string(),
                 }
             ]
         );
@@ -498,6 +566,7 @@ mod tests {
             byte_length: 8,
             sender_nodes: vec![Node {
                 name: "Motor".to_string(),
+                comment: "".to_string(),
             }],
             signals: vec![],
             comment: String::new(),
@@ -614,6 +683,77 @@ mod tests {
         assert!(db.messages.is_empty());
     }
 
+     #[test]
+    fn test_parse_node_comments_updates_all_places() {
+        // --- Setup database ---
+        let mut db: Database = Database::default();
+
+        // Database Node
+        db.nodes.push(Node {
+            name: "Gateway".to_string(),
+            comment: String::new(),
+        });
+
+        // Message with Sender Node
+        let mut msg: Message = Message {
+            id: 1000,
+            id_hex: "0x3E8".to_string(),
+            name: "TestMessage".to_string(),
+            byte_length: 8,
+            sender_nodes: vec![Node {
+                name: "Gateway".to_string(),
+                comment: String::new(),
+            }],
+            signals: vec![],
+            comment: String::new(),
+        };
+
+        // Signal with receiver Node
+        let sig: Signal = Signal {
+            name: "TestSignal".to_string(),
+            receiver_nodes: vec![Node {
+                name: "Gateway".to_string(),
+                comment: String::new(),
+            }],
+            ..Default::default()
+        };
+        msg.signals.push(sig);
+
+        db.messages.push(msg);
+
+        // Example input
+        let input = r#"CM_ BU_ Gateway "Node comment line 1
+        line 2";"#;
+
+        // --- Esegui ---
+        db.parse_node_comments(input);
+
+        // --- Expected comment normalizzato ---
+        let expected_comment: &'static str = "Node comment line 1\nline 2";
+
+        // Check on Database node
+        assert_eq!(
+            db.get_nodes_by_name_mut("Gateway").unwrap().comment,
+            expected_comment
+        );
+
+        // Check on Message node
+        let sender_comment = db.messages[0]
+            .get_sender_nodes_by_name_mut("Gateway")
+            .unwrap()
+            .comment
+            .clone();
+        assert_eq!(sender_comment, expected_comment);
+
+        // check on Signal Node
+        let receiver_comment = db.messages[0].signals[0]
+            .get_receiver_nodes_by_name_mut("Gateway")
+            .unwrap()
+            .comment
+            .clone();
+        assert_eq!(receiver_comment, expected_comment);
+    }
+
     #[test]
     fn test_parse_value_table() {
         let mut db: Database = Database::default();
@@ -646,7 +786,16 @@ mod tests {
         Database {
             version: "1.0".into(),
             bit_timing: "BS_".into(),
-            nodes: vec![],
+            nodes: vec![
+                Node {
+                    name: "Motor".to_string(),
+                    comment: "Test comment".to_string(),
+                },
+                Node {
+                    name: "Gateway".to_string(),
+                    comment: "Test comment 2".to_string(),
+                },
+            ],
             messages: vec![
                 Message {
                     id: 100,
@@ -655,6 +804,7 @@ mod tests {
                     byte_length: 8,
                     sender_nodes: vec![Node {
                         name: "Motor".into(),
+                        comment: "".to_string(),
                     }],
                     signals: vec![],
                     comment: "Test comment".into(),
@@ -666,6 +816,7 @@ mod tests {
                     byte_length: 4,
                     sender_nodes: vec![Node {
                         name: "Infotainment".into(),
+                        comment: "".to_string(),
                     }],
                     signals: vec![],
                     comment: "Another comment".into(),
@@ -758,5 +909,42 @@ mod tests {
 
         // Nome inesistente
         assert!(db.get_message_by_name_mut("UnknownName").is_none());
+    }
+
+    #[test]
+    fn test_get_nodes_by_name() {
+        let db: Database = build_test_db();
+
+        // Exact search
+        let node: Option<&Node> = db.get_nodes_by_name("Motor");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Motor");
+        assert_eq!(node.unwrap().comment, "Test comment");
+
+        // Insensitive search
+        let node: Option<&Node> = db.get_nodes_by_name("gateway");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Gateway");
+
+        // Signal not existing
+        assert!(db.get_nodes_by_name("FakeECU").is_none());
+    }
+
+    #[test]
+    fn test_get_nodes_by_name_mut() {
+        let mut db: Database = build_test_db();
+
+        // Exact search
+        let node: Option<&mut Node> = db.get_nodes_by_name_mut("Gateway");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Gateway");
+
+        // Insensitive search
+        let node: Option<&mut Node> = db.get_nodes_by_name_mut("motor");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Motor");
+
+        // Signal not existing
+        assert!(db.get_nodes_by_name_mut("FakeECU").is_none());
     }
 }

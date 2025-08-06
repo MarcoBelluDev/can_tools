@@ -25,6 +25,18 @@ impl Message {
             .iter_mut()
             .find(|sig| sig.name.eq_ignore_ascii_case(name))
     }
+
+    pub fn get_sender_nodes_by_name(&self, name: &str) -> Option<&Node> {
+        self.sender_nodes
+            .iter()
+            .find(|node| node.name.eq_ignore_ascii_case(name))
+    }
+
+    pub fn get_sender_nodes_by_name_mut(&mut self, name: &str) -> Option<&mut Node> {
+        self.sender_nodes
+            .iter_mut()
+            .find(|node| node.name.eq_ignore_ascii_case(name))
+    }
 }
 
 #[cfg(test)]
@@ -38,9 +50,16 @@ mod tests {
             id_hex: "0x64".into(),
             name: "Motor_01".into(),
             byte_length: 8,
-            sender_nodes: vec![Node {
-                name: "Motor".to_string(),
-            }],
+            sender_nodes: vec![
+                Node {
+                    name: "Motor".to_string(),
+                    comment: "Test comment".to_string(),
+                },
+                Node {
+                    name: "Gateway".to_string(),
+                    comment: "Test comment 2".to_string(),
+                },
+            ],
             signals: vec![
                 Signal {
                     name: "Speed".into(),
@@ -111,5 +130,42 @@ mod tests {
 
         // Signal not existing
         assert!(msg.get_signal_by_name("FuelLevel").is_none());
+    }
+
+    #[test]
+    fn test_get_sender_nodes_by_name() {
+        let msg: Message = build_test_message();
+
+        // Exact search
+        let node: Option<&Node> = msg.get_sender_nodes_by_name("Motor");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Motor");
+        assert_eq!(node.unwrap().comment, "Test comment");
+
+        // Insensitive search
+        let node: Option<&Node> = msg.get_sender_nodes_by_name("gateway");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Gateway");
+
+        // Signal not existing
+        assert!(msg.get_sender_nodes_by_name("FakeECU").is_none());
+    }
+
+    #[test]
+    fn test_get_sender_nodes_by_name_mut() {
+        let mut msg: Message = build_test_message();
+
+        // Exact search
+        let node: Option<&mut Node> = msg.get_sender_nodes_by_name_mut("Gateway");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Gateway");
+
+        // Insensitive search
+        let node: Option<&mut Node> = msg.get_sender_nodes_by_name_mut("motor");
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().name, "Motor");
+
+        // Signal not existing
+        assert!(msg.get_sender_nodes_by_name_mut("FakeECU").is_none());
     }
 }

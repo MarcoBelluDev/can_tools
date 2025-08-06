@@ -46,17 +46,23 @@ pub fn parse(path: &str) -> Result<Database, String> {
                 db.parse_message_comments(line);
             }
         } else if line.to_lowercase().starts_with("cm_ sg_") {
-            let mut full_comment_line = line.to_string();
+            let mut full_comment_line: String = line.to_string();
             while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
                 i += 1;
                 full_comment_line.push('\n');
                 full_comment_line.push_str(lines[i].trim());
             }
             db.parse_signal_comments(&full_comment_line);
-        } else if line.to_lowercase().starts_with("val_") {
-            if line.split_whitespace().count() >= 3 {
-                db.parse_value_table(line);
+        } else if line.to_lowercase().starts_with("cm_ bu_") {
+            let mut full_comment_line: String = line.to_string();
+            while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
+                i += 1;
+                full_comment_line.push('\n');
+                full_comment_line.push_str(lines[i].trim());
             }
+            db.parse_node_comments(&full_comment_line);
+        } else if line.to_lowercase().starts_with("val_") && line.split_whitespace().count() >= 3 {
+            db.parse_value_table(line);
         }
 
         i += 1;
@@ -119,6 +125,8 @@ CM_ SG_ 2527679645 Engine_Speed "This comment tells you everything about Engine 
 CM_ SG_ 2527679645 Overheat "This comment tells you everything about Overheat."
 CM_ SG_ 2527679645 Status "This comment tells you everything about Motor Status."
 CM_ SG_ 2527679645 Failure "This comment tells you everything about Motor Failure."
+CM_ BU_ Motor "Motor ECU is really important for vehicle motion."
+CM_ BU_ Gateway "Gatway ECU must forward frames between vehicle networks."
 
 VAL_ 2527679645 Status 1 "On" 0 "Off" ;
 VAL_ 2527679645 Overheat 1 "Overheat failure" 0 "No Overheat" ;
@@ -133,17 +141,21 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     // Parsing
     let db: Database = parse(tmp_path.to_str().unwrap()).expect("Failed to parse DBC");
 
-    // --- Controlli base ---
+    // --- Database first checks ---
     assert_eq!(db.version, "1.0.2");
     assert_eq!(db.bit_timing, "125000");
 
-    // --- Nodi ---
-    let expected_nodes = vec!["Motor", "Infotainment", "Gateway"];
-    assert_eq!(db.nodes.len(), expected_nodes.len());
-    for (i, node) in expected_nodes.iter().enumerate() {
-        assert_eq!(&db.nodes[i].name, node);
+    // --- Nodes ---
+    let expected_node_names = vec!["Motor", "Infotainment", "Gateway"];
+    let expected_comments = vec!["Motor ECU is really important for vehicle motion.", "", "Gatway ECU must forward frames between vehicle networks."];
+    assert_eq!(db.nodes.len(), 3);
+    for (i, expected_name) in expected_node_names.iter().enumerate() {
+        assert_eq!(&db.nodes[i].name, expected_name);
     }
-
+    for (i, expected_comment) in expected_comments.iter().enumerate() {
+        assert_eq!(&db.nodes[i].comment, expected_comment);
+    }
+    
     // --- Message ---
     assert_eq!(db.messages.len(), 1);
     let msg = &db.messages[0];
@@ -153,7 +165,9 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     assert_eq!(msg.byte_length, 8);
     assert_eq!(msg.sender_nodes.len(), 2);
     assert_eq!(msg.sender_nodes[0].name, "Motor");
+    assert_eq!(msg.sender_nodes[0].comment, "Motor ECU is really important for vehicle motion.");
     assert_eq!(msg.sender_nodes[1].name, "Backup_Motor");
+    assert_eq!(msg.sender_nodes[1].comment, "");
     assert_eq!(msg.comment, "Funny comment about Motor_01");
     assert_eq!(msg.signals.len(), 4);
 
@@ -184,9 +198,11 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
         assert_eq!(sig.unit_of_measurement, unit);
         assert_eq!(sig.comment, expected_comment); //
 
-        // Receivers
+        // Receivers Nodes
         let recv_names: Vec<&str> = sig.receiver_nodes.iter().map(|n| n.name.as_str()).collect();
         assert_eq!(recv_names, receivers);
+        assert_eq!(msg.signals[1].receiver_nodes[0].comment, "Gatway ECU must forward frames between vehicle networks.");
+
 
         // Value table
         for (val, desc) in expected_values {
