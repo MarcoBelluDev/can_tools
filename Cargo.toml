@@ -7,8 +7,11 @@ description = "Mix of useful tools for CAN bus"
 license = "MIT"
 repository = "https://github.com/ROMA96x/can_tools"
 keywords = ["dbc", "can", "automotive", "ecu"]
+categories = ["parsing", "automotive", "embedded"]
+homepage = "https://github.com/ROMA96x/can_tools"
+
 readme = "README.md"
 
 [lib]
-name = "candbc_parser"
+name = "can_tools"
 path = "src/lib.rs"

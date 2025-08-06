@@ -3,7 +3,48 @@ use crate::models::database::Database;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-/// read file dbc and populate Database, Messages, Signals and Node structs
+/// Parses a DBC file and returns a populated [`Database`] instance.
+///
+/// This function reads a DBC file from disk, parses its content line by line,
+/// and fills the [`Database`] structure with all parsed information:
+/// - **Version** (from `VERSION` line)
+/// - **Bit timing** (from `BS_` line)
+/// - **Nodes** (from `BU_` line)
+/// - **Messages** (from `BO_` lines)
+/// - **Signals** (from `SG_` lines)
+/// - **Sender nodes** (from `BO_TX_BU_` lines)
+/// - **Comments** for messages, signals, and nodes (from `CM_` lines)
+/// - **Value tables** (from `VAL_` lines)
+///
+/// The parsing logic is tolerant to extra spaces, comments, and multi-line strings.
+/// Multi-line comments for signals and nodes are correctly joined before parsing.
+///
+/// # Parameters
+/// - `path`: Path to the `.dbc` file to parse.
+///
+/// # Returns
+/// - `Ok(Database)` if the file was successfully read and parsed.
+/// - `Err(String)` if the file could not be opened or read.
+///
+/// # Errors
+/// Returns an `Err` with a human-readable error message if:
+/// - The file cannot be opened.
+/// - There are I/O errors while reading.
+/// - The DBC content is malformed beyond recovery (most parsing errors are ignored and result in missing elements).
+///
+/// # Example
+/// ```no_run
+/// use can_tools::file::dbc::parse;
+///
+/// let db = parse("example.dbc").expect("Failed to parse DBC file");
+/// println!("Parsed {} messages", db.messages.len());
+/// ```
+///
+/// # Notes
+/// - This function is the main entry point for converting a DBC file into a structured [`Database`].
+/// - Internal parsing details are handled by [`Database`] methods and are **not** part of the public API.
+/// - Parsing stops only at the end of the file; malformed lines are skipped.
+///
 pub fn parse(path: &str) -> Result<Database, String> {
     let file: File = File::open(path).map_err(|e| format!("Error opening file: {}", e))?;
     let reader: BufReader<File> = BufReader::new(file);
@@ -147,7 +188,11 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
 
     // --- Nodes ---
     let expected_node_names = vec!["Motor", "Infotainment", "Gateway"];
-    let expected_comments = vec!["Motor ECU is really important for vehicle motion.", "", "Gatway ECU must forward frames between vehicle networks."];
+    let expected_comments = vec![
+        "Motor ECU is really important for vehicle motion.",
+        "",
+        "Gatway ECU must forward frames between vehicle networks.",
+    ];
     assert_eq!(db.nodes.len(), 3);
     for (i, expected_name) in expected_node_names.iter().enumerate() {
         assert_eq!(&db.nodes[i].name, expected_name);
@@ -155,7 +200,7 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     for (i, expected_comment) in expected_comments.iter().enumerate() {
         assert_eq!(&db.nodes[i].comment, expected_comment);
     }
-    
+
     // --- Message ---
     assert_eq!(db.messages.len(), 1);
     let msg = &db.messages[0];
@@ -165,7 +210,10 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     assert_eq!(msg.byte_length, 8);
     assert_eq!(msg.sender_nodes.len(), 2);
     assert_eq!(msg.sender_nodes[0].name, "Motor");
-    assert_eq!(msg.sender_nodes[0].comment, "Motor ECU is really important for vehicle motion.");
+    assert_eq!(
+        msg.sender_nodes[0].comment,
+        "Motor ECU is really important for vehicle motion."
+    );
     assert_eq!(msg.sender_nodes[1].name, "Backup_Motor");
     assert_eq!(msg.sender_nodes[1].comment, "");
     assert_eq!(msg.comment, "Funny comment about Motor_01");
@@ -201,8 +249,10 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
         // Receivers Nodes
         let recv_names: Vec<&str> = sig.receiver_nodes.iter().map(|n| n.name.as_str()).collect();
         assert_eq!(recv_names, receivers);
-        assert_eq!(msg.signals[1].receiver_nodes[0].comment, "Gatway ECU must forward frames between vehicle networks.");
-
+        assert_eq!(
+            msg.signals[1].receiver_nodes[0].comment,
+            "Gatway ECU must forward frames between vehicle networks."
+        );
 
         // Value table
         for (val, desc) in expected_values {

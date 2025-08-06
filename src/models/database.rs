@@ -4,6 +4,30 @@ use crate::models::message::Message;
 use crate::models::node::Node;
 use crate::models::signal::Signal;
 
+/// Represents an in-memory representation of a parsed DBC file.
+///
+/// The `Database` stores the main elements of a DBC file, such as:
+/// - The DBC version.
+/// - The bit timing information.
+/// - The list of nodes (`Node`) in the network.
+/// - The list of CAN messages (`Message`) along with their signals.
+///
+/// It also provides parsing utilities for reading DBC lines and converting them
+/// into structured Rust types.
+///
+/// # Fields
+/// - `version`: DBC file version string (parsed from the `VERSION` line).
+/// - `bit_timing`: Bit timing information (parsed from `BS_` line).
+/// - `nodes`: The list of CAN nodes in the network (parsed from `BU_` lines).
+/// - `messages`: The list of CAN messages in the network (parsed from `BO_` lines).
+///
+/// # Example
+/// ```
+/// use can_tools::models::database::Database;
+///
+/// let db = Database::default();
+/// assert!(db.messages.is_empty());
+/// ```
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct Database {
     pub version: String,        // VERSION
@@ -13,50 +37,133 @@ pub struct Database {
 }
 
 impl Database {
+    // ---- Public accessors ----
+
+    /// Returns an immutable reference to a `Message` by its numeric CAN ID.
+    ///
+    /// # Parameters
+    /// - `id`: Numeric CAN ID of the message to search for.
+    ///
+    /// # Returns
+    /// - `Some(&Message)` if a message with the given ID exists.
+    /// - `None` otherwise.
     pub fn get_message_by_id(&self, id: u64) -> Option<&Message> {
         self.messages.iter().find(|msg| msg.id == id)
     }
 
+    /// Returns a mutable reference to a `Message` by its numeric CAN ID.
+    ///
+    /// # Parameters
+    /// - `id`: Numeric CAN ID of the message to search for.
+    ///
+    /// # Returns
+    /// - `Some(&mut Message)` if a message with the given ID exists.
+    /// - `None` otherwise.
     pub fn get_message_by_id_mut(&mut self, id: u64) -> Option<&mut Message> {
         self.messages.iter_mut().find(|msg| msg.id == id)
     }
 
+    /// Returns an immutable reference to a `Message` by its hexadecimal CAN ID.
+    ///
+    /// The comparison is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `id_hex`: Hexadecimal CAN ID string (e.g., `"0x123"`).
+    ///
+    /// # Returns
+    /// - `Some(&Message)` if a message with the given hex ID exists.
+    /// - `None` otherwise.
     pub fn get_message_by_id_hex(&self, id_hex: &str) -> Option<&Message> {
         self.messages
             .iter()
             .find(|msg| msg.id_hex.eq_ignore_ascii_case(id_hex))
     }
 
+    /// Returns a mutable reference to a `Message` by its hexadecimal CAN ID.
+    ///
+    /// The comparison is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `id_hex`: Hexadecimal CAN ID string (e.g., `"0x123"`).
+    ///
+    /// # Returns
+    /// - `Some(&mut Message)` if a message with the given hex ID exists.
+    /// - `None` otherwise.
     pub fn get_message_by_id_hex_mut(&mut self, id_hex: &str) -> Option<&mut Message> {
         self.messages
             .iter_mut()
             .find(|msg| msg.id_hex.eq_ignore_ascii_case(id_hex))
     }
 
+    /// Returns an immutable reference to a `Message` by its name.
+    ///
+    /// The comparison is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the message to search for.
+    ///
+    /// # Returns
+    /// - `Some(&Message)` if a message with the given name exists.
+    /// - `None` otherwise.
     pub fn get_message_by_name(&self, name: &str) -> Option<&Message> {
         self.messages
             .iter()
             .find(|msg| msg.name.eq_ignore_ascii_case(name))
     }
 
+    /// Returns a mutable reference to a `Message` by its name.
+    ///
+    /// The comparison is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the message to search for.
+    ///
+    /// # Returns
+    /// - `Some(&mut Message)` if a message with the given name exists.
+    /// - `None` otherwise.
     pub fn get_message_by_name_mut(&mut self, name: &str) -> Option<&mut Message> {
         self.messages
             .iter_mut()
             .find(|msg| msg.name.eq_ignore_ascii_case(name))
     }
 
+    /// Returns an immutable reference to a `Node` by its name.
+    ///
+    /// The comparison is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the node to search for.
+    ///
+    /// # Returns
+    /// - `Some(&Node)` if a node with the given name exists.
+    /// - `None` otherwise.
     pub fn get_nodes_by_name(&self, name: &str) -> Option<&Node> {
         self.nodes
             .iter()
             .find(|node| node.name.eq_ignore_ascii_case(name))
     }
 
+    /// Returns a mutable reference to a `Node` by its name.
+    ///
+    /// The comparison is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the node to search for.
+    ///
+    /// # Returns
+    /// - `Some(&mut Node)` if a node with the given name exists.
+    /// - `None` otherwise.
     pub fn get_nodes_by_name_mut(&mut self, name: &str) -> Option<&mut Node> {
         self.nodes
             .iter_mut()
             .find(|node| node.name.eq_ignore_ascii_case(name))
     }
 
+    // ---- Parsing functions (internal use) ----
+    //
+    // All of the following methods are marked as `pub(crate)` and are meant
+    // to be used internally by the parser logic. They convert raw DBC file
+    // lines into structured data inside the `Database`.
     pub(crate) fn parse_version(&mut self, line: &str) {
         // Example: VERSION "1.0"
         self.version = line
@@ -357,7 +464,7 @@ impl Database {
 
     pub(crate) fn parse_node_comments(&mut self, text: &str) {
         // CM_ BU_ NodeName "Comment..."
-        
+
         let mut parts = text.split_whitespace();
         parts.next(); // skip CM_
         parts.next(); // skip BU_
@@ -683,7 +790,7 @@ mod tests {
         assert!(db.messages.is_empty());
     }
 
-     #[test]
+    #[test]
     fn test_parse_node_comments_updates_all_places() {
         // --- Setup database ---
         let mut db: Database = Database::default();

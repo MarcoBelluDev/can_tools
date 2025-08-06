@@ -1,14 +1,44 @@
+use crate::models::node::Node;
 use std::collections::HashMap;
 
-use crate::models::node::Node;
-
-// SG_ <name> : <bit_start>|<bit_lengths>@<endianness><signedness> (<scale>,<factor>) [<min>|<max>] "<units>" <receiver nodes...>
+/// Represents a signal within a CAN message as defined in a DBC file.
+///
+/// A `Signal` describes how a specific piece of data is encoded within a CAN frame.
+/// It includes information such as bit position, bit length, endianness, scaling,
+/// valid range, and associated receiver nodes.
+///
+/// # Fields
+/// - `name`: The name of the signal.
+/// - `bit_start`: The starting bit position of the signal within the CAN frame.
+/// - `bit_length`: The number of bits used to encode the signal.
+/// - `endian`: Endianness of the signal:
+///   - `1` = little-endian (Intel format)
+///   - `0` = big-endian (Motorola format)
+/// - `sign`: Whether the signal is signed (`1`) or unsigned (`0`).
+/// - `factor`: Scaling factor applied to the raw value.
+/// - `offset`: Offset added to the scaled value.
+/// - `min`: Minimum valid physical value for the signal.
+/// - `max`: Maximum valid physical value for the signal.
+/// - `unit_of_measurement`: The unit in which the signal is expressed (e.g., `"km/h"`).
+/// - `receiver_nodes`: The list of nodes that receive this signal.
+/// - `comment`: Optional descriptive text about the signal.
+/// - `value_table`: Mapping between raw integer values and their string representations.
+///
+/// # Example
+/// ```
+/// use can_tools::models::signal::Signal;
+/// let sig = Signal::default();
+/// assert!(sig.receiver_nodes.is_empty());
+/// ```
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct Signal {
     pub name: String,
     pub bit_start: usize,
     pub bit_length: usize,
-    pub endian: usize, // 1 = little endian (Intel), 0 = big endian (Motorola)
+    /// Endianness:
+    /// - `1` = little-endian (Intel)
+    /// - `0` = big-endian (Motorola)
+    pub endian: usize,
     pub sign: usize,
     pub factor: f64,
     pub offset: f64,
@@ -16,16 +46,54 @@ pub struct Signal {
     pub max: f64,
     pub unit_of_measurement: String,
     pub receiver_nodes: Vec<Node>,
-    pub comment: String,                   // CM_ SG_
-    pub value_table: HashMap<i32, String>, // VAL_ <message_id> <signal_name> <val1> "<descr1>" <val2> "<descr2>" ... ;
+    pub comment: String,
+    pub value_table: HashMap<i32, String>,
 }
 impl Signal {
+    /// Returns an immutable reference to a receiver `Node` by its name.
+    ///
+    /// The search is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the receiver node to search for.
+    ///
+    /// # Returns
+    /// - `Some(&Node)` if a matching receiver node is found.
+    /// - `None` if no matching node exists.
+    ///
+    /// # Example
+    /// ```
+    /// # use can_tools::models::signal::Signal;
+    /// # use can_tools::models::node::Node;
+    /// let sig = Signal::default();
+    /// assert!(sig.get_receiver_nodes_by_name("Gateway").is_none());
+    /// ```
     pub fn get_receiver_nodes_by_name(&self, name: &str) -> Option<&Node> {
         self.receiver_nodes
             .iter()
             .find(|node| node.name.eq_ignore_ascii_case(name))
     }
 
+    /// Returns a mutable reference to a receiver `Node` by its name.
+    ///
+    /// The search is **case-insensitive**.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the receiver node to search for.
+    ///
+    /// # Returns
+    /// - `Some(&mut Node)` if a matching receiver node is found.
+    /// - `None` if no matching node exists.
+    ///
+    /// # Example
+    /// ```
+    /// # use can_tools::models::signal::Signal;
+    /// # use can_tools::models::node::Node;
+    /// let mut sig = Signal::default();
+    /// if let Some(node) = sig.get_receiver_nodes_by_name_mut("Motor") {
+    ///     node.comment = "Updated comment".to_string();
+    /// }
+    /// ```
     pub fn get_receiver_nodes_by_name_mut(&mut self, name: &str) -> Option<&mut Node> {
         self.receiver_nodes
             .iter_mut()
