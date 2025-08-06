@@ -42,6 +42,12 @@ pub fn parse(path: &str) -> Result<Database, String> {
                 continue;
             }
             db.parse_add_nodes(line);
+        } else if line.to_lowercase().starts_with("cm_ bo_") {
+            if line.split_whitespace().count() < 2 {
+                // row with few parts: skip
+                continue;
+            }
+            db.parse_message_comments(line);
         } else if line.to_lowercase().starts_with("val_") {
             if line.split_whitespace().count() < 3 {
                 // row with few parts: skip
@@ -104,6 +110,7 @@ BO_ 2527679645 Motor_01: 8 Motor
  SG_ Failure : 63|1@1+ (1,0) [0|1] "" Infotainment,Gateway
 
 BO_TX_BU_ 2527679645 : Backup_Motor;
+CM_ BO_ 2527679645 "Funny comment about Motor_01";
 
 VAL_ 2527679645 Status 1 "On" 0 "Off" ;
 VAL_ 2527679645 Overheat 1 "Overheat failure" 0 "No Overheat" ;
@@ -139,7 +146,7 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     assert_eq!(msg.sender_nodes.len(), 2);
     assert_eq!(msg.sender_nodes[0].name, "Motor");
     assert_eq!(msg.sender_nodes[1].name, "Backup_Motor");
-    assert!(msg.comment.is_empty());
+    assert_eq!(msg.comment, "Funny comment about Motor_01");
     assert_eq!(msg.signals.len(), 4);
 
     // --- Signals dettagliati ---

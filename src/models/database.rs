@@ -244,6 +244,47 @@ impl Database {
         }
     }
 
+    pub(crate) fn parse_message_comments(&mut self, line: &str) {
+        // Example line: CM_ BO_ 2549880610 "Testo del commento";
+        
+        // Split line into parts
+        let mut parts = line.split_whitespace();
+        parts.next(); // skip CM_
+        parts.next(); // skip BO_
+
+        let id_str = match parts.next() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let id: u64 = match id_str.parse() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        // check if we have a message with that ID
+        let msg = match self.get_message_by_id_mut(id) {
+            Some(m) => m,
+            None => return,
+        };
+
+        // Take the comment within " "
+        let line = line.trim_end_matches(';').trim();
+        let first_quote = match line.find('"') {
+            Some(pos) => pos,
+            None => return,
+        };
+        let last_quote = match line.rfind('"') {
+            Some(pos) if pos > first_quote => pos,
+            _ => return,
+        };
+
+        let comment = &line[first_quote + 1..last_quote];
+
+        // push the comment into the message
+        msg.comment = comment.to_string();
+    }
+
     pub(crate) fn parse_value_table(&mut self, line: &str) {
         // remove whitespace at end and beginning
         let line: &str = line.trim_start();
@@ -423,6 +464,45 @@ mod tests {
         let msg: &Message = db.get_message_by_id(2549940736).unwrap();
         assert_eq!(msg.sender_nodes.len(), 3);
     }
+
+     #[test]
+    fn test_parse_message_comments_id_found() {
+        // Prepare a db
+        let mut db: Database = Database::default();
+        db.messages.push(Message {
+            id: 2549880610,
+            id_hex: format!("{:X}", 2549880610u64),
+            name: "TestMessage".to_string(),
+            byte_length: 8,
+            sender_nodes: vec![],
+            signals: vec![],
+            comment: String::new(),
+        });
+
+        // Example Line
+        let line = r#"CM_ BO_ 2549880610 "Example comment";"#;
+        db.parse_message_comments(line);
+
+        // Check comment
+        assert_eq!(
+            db.messages[0].comment,
+            "Example comment"
+        );
+    }
+
+    #[test]
+    fn test_parse_message_comments_id_not_found() {
+        // Empty Database
+        let mut db: Database = Database::default();
+
+        // Example Line
+        let line = r#"CM_ BO_ 999999 "Questo non verrà mai assegnato";"#;
+        db.parse_message_comments(line);
+
+        // Message not found -> No comment assigned
+        assert!(db.messages.is_empty());
+    }
+
 
     #[test]
     fn test_parse_value_table() {

@@ -39,7 +39,7 @@ mod tests {
             name: "Motor_01".into(),
             byte_length: 8,
             sender_nodes: vec![Node {
-                name: "Motor".into(),
+                name: "Motor".to_string(),
             }],
             signals: vec![
                 Signal {
