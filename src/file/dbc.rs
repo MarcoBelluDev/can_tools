@@ -8,13 +8,18 @@ pub fn parse(path: &str) -> Result<Database, String> {
     let file: File = File::open(path).map_err(|e| format!("Error opening file: {}", e))?;
     let reader: BufReader<File> = BufReader::new(file);
 
-    let mut db: Database = Database::default();
+    // read and collect all the lines in the reader
+    let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
-    for line in reader.lines().map_while(Result::ok) {
-        let line: &str = line.trim();
+    let mut db: Database = Database::default();
+    let mut i: usize = 0; // row number of the .dbc file
+
+    while i < lines.len() {
+        let line = lines[i].trim();
 
         // skip comments and empty lines
         if line.is_empty() || line.starts_with("//") {
+            i += 1;
             continue;
         }
 
@@ -25,37 +30,36 @@ pub fn parse(path: &str) -> Result<Database, String> {
         } else if line.to_lowercase().starts_with("bu_") {
             db.parse_nodes(line);
         } else if line.to_lowercase().starts_with("bo_ ") {
-            if line.split_whitespace().count() < 4 {
-                // row with few parts: skip
-                continue;
+            if line.split_whitespace().count() >= 4 {
+                db.parse_messages(line);
             }
-            db.parse_messages(line);
         } else if line.to_lowercase().starts_with("sg_") {
-            if line.split_whitespace().count() < 5 {
-                // row with few parts: skip
-                continue;
+            if line.split_whitespace().count() >= 5 {
+                db.parse_signal(line);
             }
-            db.parse_signal(line);
         } else if line.to_lowercase().starts_with("bo_tx_bu_") {
-            if line.split_whitespace().count() < 2 {
-                // row with few parts: skip
-                continue;
+            if line.split_whitespace().count() >= 2 {
+                db.parse_add_nodes(line);
             }
-            db.parse_add_nodes(line);
         } else if line.to_lowercase().starts_with("cm_ bo_") {
-            if line.split_whitespace().count() < 2 {
-                // row with few parts: skip
-                continue;
+            if line.split_whitespace().count() >= 2 {
+                db.parse_message_comments(line);
             }
-            db.parse_message_comments(line);
+        } else if line.to_lowercase().starts_with("cm_ sg_") {
+            let mut full_comment_line = line.to_string();
+            while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
+                i += 1;
+                full_comment_line.push('\n');
+                full_comment_line.push_str(lines[i].trim());
+            }
+            db.parse_signal_comments(&full_comment_line);
         } else if line.to_lowercase().starts_with("val_") {
-            if line.split_whitespace().count() < 3 {
-                // row with few parts: skip
-                continue;
+            if line.split_whitespace().count() >= 3 {
+                db.parse_value_table(line);
             }
-            db.parse_value_table(line);
         }
-        // else if line.starts_with("CM_") { ... }
+
+        i += 1;
     }
 
     Ok(db)
@@ -111,6 +115,10 @@ BO_ 2527679645 Motor_01: 8 Motor
 
 BO_TX_BU_ 2527679645 : Backup_Motor;
 CM_ BO_ 2527679645 "Funny comment about Motor_01";
+CM_ SG_ 2527679645 Engine_Speed "This comment tells you everything about Engine Speed."
+CM_ SG_ 2527679645 Overheat "This comment tells you everything about Overheat."
+CM_ SG_ 2527679645 Status "This comment tells you everything about Motor Status."
+CM_ SG_ 2527679645 Failure "This comment tells you everything about Motor Failure."
 
 VAL_ 2527679645 Status 1 "On" 0 "Off" ;
 VAL_ 2527679645 Overheat 1 "Overheat failure" 0 "No Overheat" ;
@@ -149,7 +157,7 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     assert_eq!(msg.comment, "Funny comment about Motor_01");
     assert_eq!(msg.signals.len(), 4);
 
-    // --- Signals dettagliati ---
+    // --- closure to quickly check signals ---
     let check_signal = |sig: &Signal,
                         expected_name: &str,
                         bit_start: usize,
@@ -162,7 +170,8 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
                         max: f64,
                         unit: &str,
                         receivers: Vec<&str>,
-                        expected_values: HashMap<i32, &str>| {
+                        expected_values: HashMap<i32, &str>,
+                        expected_comment: &str| {
         assert_eq!(sig.name, expected_name);
         assert_eq!(sig.bit_start, bit_start);
         assert_eq!(sig.bit_length, bit_length);
@@ -173,6 +182,7 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
         assert_eq!(sig.min, min);
         assert_eq!(sig.max, max);
         assert_eq!(sig.unit_of_measurement, unit);
+        assert_eq!(sig.comment, expected_comment); //
 
         // Receivers
         let recv_names: Vec<&str> = sig.receiver_nodes.iter().map(|n| n.name.as_str()).collect();
@@ -199,6 +209,7 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
         "",
         vec!["Infotainment", "Gateway"],
         HashMap::from([(1, "On"), (0, "Off")]),
+        "This comment tells you everything about Motor Status.",
     );
 
     // Signal: Overheat
@@ -216,6 +227,7 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
         "",
         vec!["Gateway"],
         HashMap::from([(1, "Overheat failure"), (0, "No Overheat")]),
+        "This comment tells you everything about Overheat.",
     );
 
     // Signal: Engine_Speed
@@ -233,6 +245,7 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
         "km/h",
         vec!["Infotainment"],
         HashMap::from([(255, "Error")]),
+        "This comment tells you everything about Engine Speed.",
     );
 
     // Signal: Failure
@@ -250,5 +263,6 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
         "",
         vec!["Infotainment", "Gateway"],
         HashMap::from([(1, "Generic Failure"), (0, "No Failures")]),
+        "This comment tells you everything about Motor Failure.",
     );
 }

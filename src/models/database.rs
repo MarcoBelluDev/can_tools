@@ -246,7 +246,7 @@ impl Database {
 
     pub(crate) fn parse_message_comments(&mut self, line: &str) {
         // Example line: CM_ BO_ 2549880610 "Testo del commento";
-        
+
         // Split line into parts
         let mut parts = line.split_whitespace();
         parts.next(); // skip CM_
@@ -283,6 +283,60 @@ impl Database {
 
         // push the comment into the message
         msg.comment = comment.to_string();
+    }
+
+    pub(crate) fn parse_signal_comments(&mut self, text: &str) {
+        // Example: CM_ SG_ 1635 SignalName "Comment..."
+
+        let mut parts = text.split_whitespace();
+        parts.next(); // skip CM_
+        parts.next(); // skip SG_
+
+        let id_str = match parts.next() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let id: u64 = match id_str.parse() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        let signal_name = match parts.next() {
+            Some(name) => name,
+            None => return,
+        };
+
+        // Find Message
+        let msg: &mut Message = match self.get_message_by_id_mut(id) {
+            Some(m) => m,
+            None => return,
+        };
+
+        // Find Signal
+        let sig: &mut Signal = match msg.get_signal_by_name_mut(signal_name) {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Extract the comment
+        let first_quote: usize = match text.find('"') {
+            Some(pos) => pos,
+            None => return,
+        };
+        let last_quote: usize = match text.rfind('"') {
+            Some(pos) if pos > first_quote => pos,
+            _ => return,
+        };
+
+        let comment = &text[first_quote + 1..last_quote];
+
+        // Push comment into the signal, remove initial whitespaces in lines
+        sig.comment = comment
+            .lines()
+            .map(|l| l.trim_start())
+            .collect::<Vec<_>>()
+            .join("\n");
     }
 
     pub(crate) fn parse_value_table(&mut self, line: &str) {
@@ -465,7 +519,7 @@ mod tests {
         assert_eq!(msg.sender_nodes.len(), 3);
     }
 
-     #[test]
+    #[test]
     fn test_parse_message_comments_id_found() {
         // Prepare a db
         let mut db: Database = Database::default();
@@ -484,10 +538,7 @@ mod tests {
         db.parse_message_comments(line);
 
         // Check comment
-        assert_eq!(
-            db.messages[0].comment,
-            "Example comment"
-        );
+        assert_eq!(db.messages[0].comment, "Example comment");
     }
 
     #[test]
@@ -503,6 +554,65 @@ mod tests {
         assert!(db.messages.is_empty());
     }
 
+    #[test]
+    fn test_parse_signal_comments_id_found() {
+        // Prepare a db and a message to test
+        let mut db: Database = Database::default();
+        let msg: Message = Message {
+            id: 1635u64,
+            id_hex: format!("{:X}", 1635u64),
+            name: "Gateway_01".to_string(),
+            byte_length: 8,
+            sender_nodes: vec![],
+            signals: vec![Signal {
+                name: "NetStatus".to_string(),
+                ..Default::default()
+            }],
+            comment: String::new(),
+        };
+        db.messages.push(msg);
+
+        // Example Line (con rimozione indentazione)
+        let line = r#"CM_ SG_ 1635 NetStatus "Example of
+                multiline
+                comment."; "#;
+
+        let expected_output = r#"Example of
+                multiline
+                comment."#;
+
+        // Remove initial space of each line
+        let expected_output = expected_output
+            .lines()
+            .map(|l| l.trim_start())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        println!("line = {}", line);
+
+        // parse the comment
+        db.parse_signal_comments(&line);
+
+        // Verifica che il commento sia stato assegnato correttamente
+        let msg: &mut Message = db.get_message_by_id_mut(1635u64).unwrap();
+        let sig: &Signal = msg.get_signal_by_name("NetStatus").unwrap();
+        assert_eq!(sig.comment, expected_output);
+    }
+
+    #[test]
+    fn test_parse_signal_comments_id_not_found() {
+        // Database vuoto
+        let mut db: Database = Database::default();
+
+        // Riga che fa riferimento a un ID inesistente
+        let line: &'static str = r#"CM_ SG_ 9999 SomeSignal "This comment will not be assigned";"#;
+
+        // Parsing
+        db.parse_signal_comments(line);
+
+        // Nessun messaggio aggiunto
+        assert!(db.messages.is_empty());
+    }
 
     #[test]
     fn test_parse_value_table() {
