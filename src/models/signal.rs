@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::models::node::Node;
 
 // SG_ <name> : <bit_start>|<bit_lengths>@<endianness><signedness> (<scale>,<factor>) [<min>|<max>] "<units>" <receiver nodes...>
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct Signal {
     pub name: String,
     pub bit_start: usize,

@@ -13,6 +13,22 @@ pub struct Database {
 }
 
 impl Database {
+    pub fn get_message_by_id(&self, id: u64) -> Option<&Message> {
+        self.messages.iter().find(|msg| msg.id == id)
+    }
+
+    pub fn get_message_by_id_hex(&self, id_hex: &str) -> Option<&Message> {
+        self.messages
+            .iter()
+            .find(|msg| msg.id_hex.eq_ignore_ascii_case(id_hex))
+    }
+
+    pub fn get_message_by_name(&self, name: &str) -> Option<&Message> {
+        self.messages
+            .iter()
+            .find(|msg| msg.name.eq_ignore_ascii_case(name))
+    }
+
     pub(crate) fn parse_version(&mut self, line: &str) {
         // Example: VERSION "1.0"
         self.version = line
@@ -351,5 +367,76 @@ mod tests {
         assert_eq!(sig.value_table.get(&0), Some(&"Off".to_string()));
         assert_eq!(sig.value_table.get(&1), Some(&"On".to_string()));
         assert_eq!(sig.value_table.get(&255), Some(&"Error".to_string()));
+    }
+
+    fn build_test_db() -> Database {
+        Database {
+            version: "1.0".into(),
+            bit_timing: "BS_".into(),
+            nodes: vec![],
+            messages: vec![
+                Message {
+                    id: 100,
+                    id_hex: "0x64".into(),
+                    name: "Motor_01".into(),
+                    byte_length: 8,
+                    sender_node: "Motor".into(),
+                    signals: vec![],
+                    comment: "Test comment".into(),
+                },
+                Message {
+                    id: 200,
+                    id_hex: "0xC8".into(),
+                    name: "Game_01".into(),
+                    byte_length: 4,
+                    sender_node: "Infotainment".into(),
+                    signals: vec![],
+                    comment: "Another comment".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_get_message_by_id() {
+        let db = build_test_db();
+        let msg = db.get_message_by_id(100);
+        assert!(msg.is_some());
+        assert_eq!(msg.unwrap().name, "Motor_01");
+
+        // ID inesistente
+        assert!(db.get_message_by_id(999).is_none());
+    }
+
+    #[test]
+    fn test_get_message_by_id_hex() {
+        let db = build_test_db();
+        let msg = db.get_message_by_id_hex("0xC8");
+        assert!(msg.is_some());
+        assert_eq!(msg.unwrap().id, 200);
+
+        // Case insensitive
+        let msg_lower = db.get_message_by_id_hex("0xc8");
+        assert!(msg_lower.is_some());
+        assert_eq!(msg_lower.unwrap().id, 200);
+
+        // ID HEX inesistente
+        assert!(db.get_message_by_id_hex("0xFFFF").is_none());
+    }
+
+    #[test]
+    fn test_get_message_by_name() {
+        let db = build_test_db();
+        let msg = db.get_message_by_name("Motor_01");
+        assert!(msg.is_some());
+        assert_eq!(msg.unwrap().id, 100);
+
+        // Case insensitive
+        let msg_lower = db.get_message_by_name("motor_01");
+        assert!(msg_lower.is_some());
+        assert_eq!(msg_lower.unwrap().id, 100);
+
+        // Nome inesistente
+        assert!(db.get_message_by_name("UnknownName").is_none());
     }
 }
