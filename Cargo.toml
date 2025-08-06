@@ -1,7 +1,13 @@
 [package]
 name = "can_tools"
-version = "0.1.6"
-edition = "2021"
+version = "0.1.7"
+edition = "2024"
+authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
+description = "Mix of useful tools for CAN bus"
+license = "MIT"
+repository = "https://github.com/ROMA96x/can_tools"
+keywords = ["dbc", "can", "automotive", "ecu"]
+readme = "README.md"
 
 [lib]
 name = "candbc_parser"
