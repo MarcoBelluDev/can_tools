@@ -48,3 +48,190 @@ pub fn parse(path: &str) -> Result<Database, String> {
 
     Ok(db)
 }
+
+#[test]
+fn test_parse_simple_dbc_extended() {
+    use crate::models::signal::Signal;
+    use std::collections::HashMap;
+
+    let dbc_content = r#"
+VERSION "1.0.2"
+
+NS_ : 
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_: 125000
+
+BU_: Motor Infotainment Gateway
+
+BO_ 2527679645 Motor_01: 8 Motor
+ SG_ Status : 61|1@1+ (1,0) [0|1] ""  Infotainment,Gateway
+ SG_ Overheat : 62|1@1+ (1,0) [0|1] ""  Gateway
+ SG_ Engine_Speed : 48|8@1+ (1,0) [0|255] "km/h" Infotainment
+ SG_ Failure : 63|1@1+ (1,0) [0|1] "" Infotainment,Gateway
+
+VAL_ 2527679645 Status 1 "On" 0 "Off" ;
+VAL_ 2527679645 Overheat 1 "Overheat failure" 0 "No Overheat" ;
+VAL_ 2527679645 Engine_Speed 255 "Error";
+VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
+"#;
+
+    // Temporaneamente salvo il file
+    let tmp_path = std::env::temp_dir().join("test.dcb");
+    std::fs::write(&tmp_path, dbc_content).unwrap();
+
+    // Parsing
+    let db: Database = parse(tmp_path.to_str().unwrap()).expect("Failed to parse DBC");
+
+    // --- Controlli base ---
+    assert_eq!(db.version, "1.0.2");
+    assert_eq!(db.bit_timing, "125000");
+
+    // --- Nodi ---
+    let expected_nodes = vec!["Motor", "Infotainment", "Gateway"];
+    assert_eq!(db.nodes.len(), expected_nodes.len());
+    for (i, node) in expected_nodes.iter().enumerate() {
+        assert_eq!(&db.nodes[i].name, node);
+    }
+
+    // --- Message ---
+    assert_eq!(db.messages.len(), 1);
+    let msg = &db.messages[0];
+    assert_eq!(msg.id, 2527679645);
+    assert_eq!(msg.id_hex, "0x96A9549D");
+    assert_eq!(msg.name, "Motor_01");
+    assert_eq!(msg.byte_length, 8);
+    assert_eq!(msg.sender_node, "Motor");
+    assert!(msg.comment.is_empty());
+    assert_eq!(msg.signals.len(), 4);
+
+    // --- Signals dettagliati ---
+    let check_signal = |sig: &Signal,
+                        expected_name: &str,
+                        bit_start: usize,
+                        bit_length: usize,
+                        endian: usize,
+                        sign: usize,
+                        factor: f64,
+                        offset: f64,
+                        min: f64,
+                        max: f64,
+                        unit: &str,
+                        receivers: Vec<&str>,
+                        expected_values: HashMap<i32, &str>| {
+        assert_eq!(sig.name, expected_name);
+        assert_eq!(sig.bit_start, bit_start);
+        assert_eq!(sig.bit_length, bit_length);
+        assert_eq!(sig.endian, endian);
+        assert_eq!(sig.sign, sign);
+        assert_eq!(sig.factor, factor);
+        assert_eq!(sig.offset, offset);
+        assert_eq!(sig.min, min);
+        assert_eq!(sig.max, max);
+        assert_eq!(sig.unit_of_measurement, unit);
+
+        // Receivers
+        let recv_names: Vec<&str> = sig.receiver_nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(recv_names, receivers);
+
+        // Value table
+        for (val, desc) in expected_values {
+            assert_eq!(sig.value_table.get(&val).map(|s| s.as_str()), Some(desc));
+        }
+    };
+
+    // Signal: Status
+    check_signal(
+        &msg.signals[0],
+        "Status",
+        61,
+        1,
+        1,
+        0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        "",
+        vec!["Infotainment", "Gateway"],
+        HashMap::from([(1, "On"), (0, "Off")]),
+    );
+
+    // Signal: Overheat
+    check_signal(
+        &msg.signals[1],
+        "Overheat",
+        62,
+        1,
+        1,
+        0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        "",
+        vec!["Gateway"],
+        HashMap::from([(1, "Overheat failure"), (0, "No Overheat")]),
+    );
+
+    // Signal: Engine_Speed
+    check_signal(
+        &msg.signals[2],
+        "Engine_Speed",
+        48,
+        8,
+        1,
+        0,
+        1.0,
+        0.0,
+        0.0,
+        255.0,
+        "km/h",
+        vec!["Infotainment"],
+        HashMap::from([(255, "Error")]),
+    );
+
+    // Signal: Failure
+    check_signal(
+        &msg.signals[3],
+        "Failure",
+        63,
+        1,
+        1,
+        0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        "",
+        vec!["Infotainment", "Gateway"],
+        HashMap::from([(1, "Generic Failure"), (0, "No Failures")]),
+    );
+}
