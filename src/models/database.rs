@@ -4,7 +4,7 @@ use crate::models::message::Message;
 use crate::models::node::Node;
 use crate::models::signal::Signal;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq, Debug)]
 pub struct Database {
     pub version: String,        // VERSION
     pub bit_timing: String,     // BS_
@@ -17,15 +17,31 @@ impl Database {
         self.messages.iter().find(|msg| msg.id == id)
     }
 
+    pub fn get_message_by_id_mut(&mut self, id: u64) -> Option<&mut Message> {
+        self.messages.iter_mut().find(|msg| msg.id == id)
+    }
+
     pub fn get_message_by_id_hex(&self, id_hex: &str) -> Option<&Message> {
         self.messages
             .iter()
             .find(|msg| msg.id_hex.eq_ignore_ascii_case(id_hex))
     }
 
+    pub fn get_message_by_id_hex_mut(&mut self, id_hex: &str) -> Option<&mut Message> {
+        self.messages
+            .iter_mut()
+            .find(|msg| msg.id_hex.eq_ignore_ascii_case(id_hex))
+    }
+
     pub fn get_message_by_name(&self, name: &str) -> Option<&Message> {
         self.messages
             .iter()
+            .find(|msg| msg.name.eq_ignore_ascii_case(name))
+    }
+
+    pub fn get_message_by_name_mut(&mut self, name: &str) -> Option<&mut Message> {
+        self.messages
+            .iter_mut()
             .find(|msg| msg.name.eq_ignore_ascii_case(name))
     }
 
@@ -76,14 +92,16 @@ impl Database {
         let id_hex: String = format!("0x{:X}", id); // hexadecimal id
         let name: String = parts[2].trim_end_matches(':').to_string();
         let byte_length: usize = parts[3].parse::<usize>().unwrap_or(0);
-        let sender_node: String = parts[4].to_string();
+        let sender_nodes: Vec<Node> = vec![Node {
+            name: parts[4].to_string(),
+        }];
 
         let msg: Message = Message {
             id,
             id_hex,
             name,
             byte_length,
-            sender_node,
+            sender_nodes,
             signals: Vec::new(),
             comment: String::new(),
         };
@@ -193,6 +211,39 @@ impl Database {
         }
     }
 
+    pub(crate) fn parse_add_nodes(&mut self, line: &str) {
+        // remove "BO_TX_BU_"
+        let content = line.trim_start_matches("BO_TX_BU_").trim();
+
+        // Split su ":" → prima parte ID, seconda parte lista nodi
+        let mut parts = content.splitn(2, ':');
+        let id_str = parts.next().unwrap_or("").trim();
+        let nodes_str = parts.next().unwrap_or("").trim().trim_end_matches(';');
+
+        // Converte ID in u64
+        let id: u64 = match id_str.parse() {
+            Ok(v) => v,
+            Err(_) => return, // se non è un numero valido, esce
+        };
+
+        // Trova messaggio corrispondente
+        if let Some(msg) = self.get_message_by_id_mut(id) {
+            // Split nodi separati da virgola
+            for node_name in nodes_str
+                .split(',')
+                .map(|n| n.trim())
+                .filter(|n| !n.is_empty())
+            {
+                // Controlla se già presente
+                if !msg.sender_nodes.iter().any(|n| n.name == node_name) {
+                    msg.sender_nodes.push(Node {
+                        name: node_name.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
     pub(crate) fn parse_value_table(&mut self, line: &str) {
         // remove whitespace at end and beginning
         let line: &str = line.trim_start();
@@ -294,13 +345,13 @@ mod tests {
         assert_eq!(db.messages.len(), 1);
 
         let msg = &db.messages[0];
-        assert_eq!(msg.id, 960); // decimal ID
-        assert_eq!(msg.id_hex, "0x3C0"); // hex ID
-        assert_eq!(msg.name, "Key_Status"); // nome senza ":"
-        assert_eq!(msg.byte_length, 4); // lunghezza in byte
-        assert_eq!(msg.sender_node, "BCM"); // sender node
-        assert!(msg.signals.is_empty()); // inizialmente vuoto
-        assert!(msg.comment.is_empty()); // nessun commento iniziale
+        assert_eq!(msg.id, 960);
+        assert_eq!(msg.id_hex, "0x3C0");
+        assert_eq!(msg.name, "Key_Status");
+        assert_eq!(msg.byte_length, 4);
+        assert_eq!(msg.sender_nodes[0].name, "BCM");
+        assert!(msg.signals.is_empty());
+        assert!(msg.comment.is_empty());
     }
 
     #[test]
@@ -342,6 +393,38 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_add_nodes() {
+        // Crea un Database con un messaggio esistente
+        let mut db: Database = Database::default();
+        db.messages.push(Message {
+            id: 2549940736,
+            id_hex: String::from("0x98012340"),
+            name: String::from("TestMessage"),
+            byte_length: 8,
+            sender_nodes: vec![Node {
+                name: "Motor".to_string(),
+            }],
+            signals: vec![],
+            comment: String::new(),
+        });
+
+        // Example Line
+        db.parse_add_nodes("BO_TX_BU_ 2549940736 : Infotainment,Gateway;");
+
+        // Check all expected nodes are present
+        let msg: &Message = db.get_message_by_id(2549940736).unwrap();
+        assert_eq!(msg.sender_nodes.len(), 3);
+        assert!(msg.sender_nodes.iter().any(|n| n.name == "Motor"));
+        assert!(msg.sender_nodes.iter().any(|n| n.name == "Infotainment"));
+        assert!(msg.sender_nodes.iter().any(|n| n.name == "Gateway"));
+
+        // Add again the same lane and check there are no duplicates
+        db.parse_add_nodes("BO_TX_BU_ 2549940736 : Infotainment,Gateway;");
+        let msg: &Message = db.get_message_by_id(2549940736).unwrap();
+        assert_eq!(msg.sender_nodes.len(), 3);
+    }
+
+    #[test]
     fn test_parse_value_table() {
         let mut db: Database = Database::default();
 
@@ -380,7 +463,9 @@ mod tests {
                     id_hex: "0x64".into(),
                     name: "Motor_01".into(),
                     byte_length: 8,
-                    sender_node: "Motor".into(),
+                    sender_nodes: vec![Node {
+                        name: "Motor".into(),
+                    }],
                     signals: vec![],
                     comment: "Test comment".into(),
                 },
@@ -389,7 +474,9 @@ mod tests {
                     id_hex: "0xC8".into(),
                     name: "Game_01".into(),
                     byte_length: 4,
-                    sender_node: "Infotainment".into(),
+                    sender_nodes: vec![Node {
+                        name: "Infotainment".into(),
+                    }],
                     signals: vec![],
                     comment: "Another comment".into(),
                 },
@@ -409,6 +496,17 @@ mod tests {
     }
 
     #[test]
+    fn test_get_message_by_id_mut() {
+        let mut db = build_test_db();
+        let msg = db.get_message_by_id_mut(100);
+        assert!(msg.is_some());
+        assert_eq!(msg.unwrap().name, "Motor_01");
+
+        // ID inesistente
+        assert!(db.get_message_by_id_mut(999).is_none());
+    }
+
+    #[test]
     fn test_get_message_by_id_hex() {
         let db = build_test_db();
         let msg = db.get_message_by_id_hex("0xC8");
@@ -425,6 +523,22 @@ mod tests {
     }
 
     #[test]
+    fn test_get_message_by_id_hex_mut() {
+        let mut db = build_test_db();
+        let msg = db.get_message_by_id_hex_mut("0xC8");
+        assert!(msg.is_some());
+        assert_eq!(msg.unwrap().id, 200);
+
+        // Case insensitive
+        let msg_lower = db.get_message_by_id_hex_mut("0xc8");
+        assert!(msg_lower.is_some());
+        assert_eq!(msg_lower.unwrap().id, 200);
+
+        // ID HEX inesistente
+        assert!(db.get_message_by_id_hex_mut("0xFFFF").is_none());
+    }
+
+    #[test]
     fn test_get_message_by_name() {
         let db = build_test_db();
         let msg = db.get_message_by_name("Motor_01");
@@ -438,5 +552,21 @@ mod tests {
 
         // Nome inesistente
         assert!(db.get_message_by_name("UnknownName").is_none());
+    }
+
+    #[test]
+    fn test_get_message_by_name_mut() {
+        let mut db = build_test_db();
+        let msg = db.get_message_by_name_mut("Motor_01");
+        assert!(msg.is_some());
+        assert_eq!(msg.unwrap().id, 100);
+
+        // Case insensitive
+        let msg_lower = db.get_message_by_name_mut("motor_01");
+        assert!(msg_lower.is_some());
+        assert_eq!(msg_lower.unwrap().id, 100);
+
+        // Nome inesistente
+        assert!(db.get_message_by_name_mut("UnknownName").is_none());
     }
 }

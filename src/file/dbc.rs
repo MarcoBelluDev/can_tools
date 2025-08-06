@@ -24,8 +24,8 @@ pub fn parse(path: &str) -> Result<Database, String> {
             db.parse_bit_timing(line);
         } else if line.to_lowercase().starts_with("bu_") {
             db.parse_nodes(line);
-        } else if line.to_lowercase().starts_with("bo_") {
-            if line.split_whitespace().count() < 5 {
+        } else if line.to_lowercase().starts_with("bo_ ") {
+            if line.split_whitespace().count() < 4 {
                 // row with few parts: skip
                 continue;
             }
@@ -36,6 +36,12 @@ pub fn parse(path: &str) -> Result<Database, String> {
                 continue;
             }
             db.parse_signal(line);
+        } else if line.to_lowercase().starts_with("bo_tx_bu_") {
+            if line.split_whitespace().count() < 2 {
+                // row with few parts: skip
+                continue;
+            }
+            db.parse_add_nodes(line);
         } else if line.to_lowercase().starts_with("val_") {
             if line.split_whitespace().count() < 3 {
                 // row with few parts: skip
@@ -97,6 +103,8 @@ BO_ 2527679645 Motor_01: 8 Motor
  SG_ Engine_Speed : 48|8@1+ (1,0) [0|255] "km/h" Infotainment
  SG_ Failure : 63|1@1+ (1,0) [0|1] "" Infotainment,Gateway
 
+BO_TX_BU_ 2527679645 : Backup_Motor;
+
 VAL_ 2527679645 Status 1 "On" 0 "Off" ;
 VAL_ 2527679645 Overheat 1 "Overheat failure" 0 "No Overheat" ;
 VAL_ 2527679645 Engine_Speed 255 "Error";
@@ -128,7 +136,9 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     assert_eq!(msg.id_hex, "0x96A9549D");
     assert_eq!(msg.name, "Motor_01");
     assert_eq!(msg.byte_length, 8);
-    assert_eq!(msg.sender_node, "Motor");
+    assert_eq!(msg.sender_nodes.len(), 2);
+    assert_eq!(msg.sender_nodes[0].name, "Motor");
+    assert_eq!(msg.sender_nodes[1].name, "Backup_Motor");
     assert!(msg.comment.is_empty());
     assert_eq!(msg.signals.len(), 4);
 
