@@ -1,5 +1,5 @@
-use crate::models::node::Node;
-use crate::models::signal::Signal;
+use crate::types::node::Node;
+use crate::types::signal::Signal;
 
 /// Represents a generic CAN message parsed from a DBC file.
 ///
@@ -12,13 +12,14 @@ use crate::models::signal::Signal;
 /// - `id_hex`: The CAN ID in hexadecimal string format (e.g., `"0x123"`).
 /// - `name`: The message name as defined in the DBC file.
 /// - `byte_length`: The length of the CAN frame payload in bytes.
+/// - `msgtype`: "CAN" or "CAN FD"
 /// - `sender_nodes`: The list of nodes that can send this message.
 /// - `signals`: The list of signals (`Signal`) contained in this message.
 /// - `comment`: An optional comment or description for the message.
 ///
 /// # Example
 /// ```
-/// use can_tools::models::message::Message;
+/// use can_tools::types::message::Message;
 /// let msg = Message::default();
 /// assert!(msg.signals.is_empty());
 /// ```
@@ -29,6 +30,7 @@ pub struct Message {
     pub id_hex: String,
     pub name: String,
     pub byte_length: usize,
+    pub msgtype: String,
     pub sender_nodes: Vec<Node>,
     pub signals: Vec<Signal>, // SG_
     pub comment: String,      // CM_ BO_
@@ -48,7 +50,7 @@ impl Message {
     ///
     /// # Example
     /// ```
-    /// # use can_tools::models::message::Message;
+    /// # use can_tools::types::message::Message;
     /// let msg = Message::default();
     /// assert!(msg.get_signal_by_name("Speed").is_none());
     /// ```
@@ -71,7 +73,7 @@ impl Message {
     ///
     /// # Example
     /// ```
-    /// # use can_tools::models::message::Message;
+    /// # use can_tools::types::message::Message;
     /// let mut msg = Message::default();
     /// if let Some(sig) = msg.get_signal_by_name_mut("RPM") {
     ///     sig.factor = 2.0;
@@ -96,7 +98,7 @@ impl Message {
     ///
     /// # Example
     /// ```
-    /// # use can_tools::models::message::Message;
+    /// # use can_tools::types::message::Message;
     /// let msg = Message::default();
     /// assert!(msg.get_sender_nodes_by_name("Gateway").is_none());
     /// ```
@@ -119,7 +121,7 @@ impl Message {
     ///
     /// # Example
     /// ```
-    /// # use can_tools::models::message::Message;
+    /// # use can_tools::types::message::Message;
     /// let mut msg = Message::default();
     /// if let Some(node) = msg.get_sender_nodes_by_name_mut("Motor") {
     ///     node.comment = "Updated comment".to_string();
@@ -129,6 +131,26 @@ impl Message {
         self.sender_nodes
             .iter_mut()
             .find(|node| node.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Clears all metadata, sender nodes, and signals from this `Message`.
+    ///
+    /// This method resets string fields to empty strings and numeric fields to `0`,
+    /// and empties the `sender_nodes` and `signals` vectors.
+    ///
+    /// # Effects
+    /// - `id_hex`, `name`, `msgtype`, `comment` → `""`
+    /// - `byte_length` → `0`
+    /// - `sender_nodes`, `signals` → emptied (via `Vec::default`)
+    pub fn clear(&mut self) {
+        self.id = 0;
+        self.id_hex.clear();
+        self.name.clear();
+        self.byte_length = 0;
+        self.msgtype.clear();
+        self.sender_nodes = Vec::default();
+        self.signals = Vec::default();
+        self.comment.clear();
     }
 }
 
@@ -143,6 +165,7 @@ mod tests {
             id_hex: "0x64".into(),
             name: "Motor_01".into(),
             byte_length: 8,
+            msgtype: "CAN".into(),
             sender_nodes: vec![
                 Node {
                     name: "Motor".to_string(),
@@ -260,5 +283,14 @@ mod tests {
 
         // Signal not existing
         assert!(msg.get_sender_nodes_by_name_mut("FakeECU").is_none());
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut msg: Message = build_test_message();
+
+        // Check that everything is back to default value
+        msg.clear();
+        assert_eq!(msg, Message::default());
     }
 }

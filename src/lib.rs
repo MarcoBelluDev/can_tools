@@ -1,21 +1,18 @@
 //! # can_tools
 //!
-//! `can_tools` is a Rust library for parsing [DBC files](https://en.wikipedia.org/wiki/DBC_(file_format))
-//! used in automotive applications to describe CAN network messages and signals.
+//! `can_tools` is a collection of useful tool for automotive CAN bus completely developed in Rust
 //!
 //! ## Features
-//! - Parses complete `.dbc` files into structured Rust types
-//! - Reads **messages**, **signals**, **nodes**, **comments**, and **value tables**
-//! - Case-insensitive search utilities for messages, signals, and nodes
-//! - Simple API: one call to [`parse`](crate::file::dbc::parse) produces a ready-to-use [`Database`](crate::models::database::Database)
+//! - Parses complete CAN databases from both [.dbc](https://en.wikipedia.org/wiki/DBC_(file_format)) and [.arxml](https://autosar.readthedocs.io/en/latest/basics.html) formats into structured Rust types
+//! - Reads complete `.asc` CAN trace file 
 //!
 //! ## Example
 //! ```no_run
-//! use can_tools::file::dbc::parse;
+//! use can_tools::dbc;
 //!
 //! fn main() -> Result<(), String> {
 //!     // Parse the DBC file
-//!     let db = parse("path/to/file.dbc")?;
+//!     let db = dbc::parse_from_file("path/to/file.dbc")?;
 //!
 //!     println!("DBC Version: {}", db.version);
 //!     println!("Messages: {}", db.messages.len());
@@ -75,34 +72,35 @@
 //! Node: represents a CAN ECU (sender or receiver)
 //! ```
 //!
-//! ## Main Types
-//!
-//! - [`Database`](crate::models::database::Database):
-//!   Holds the parsed DBC file structure, including version, bit timing,
-//!   all [`Node`](crate::models::node::Node)s, and [`Message`](crate::models::message::Message)s.
-//!
-//! - [`Message`](crate::models::message::Message):
-//!   Represents a CAN message. Contains message ID, name, sender nodes, and its list of [`Signal`](crate::models::signal::Signal)s.
-//!
-//! - [`Signal`](crate::models::signal::Signal):
-//!   Represents a data field within a CAN message, including bit position, length,
-//!   scaling factor, unit, receiver nodes, and optional value descriptions.
-//!
-//! - [`Node`](crate::models::node::Node):
-//!   Represents a CAN network node (ECU) that can send or receive messages.
-//!
 //! ## When to Use
 //! Use `can_tools` when you need to:
-//! - Read `.dbc` files in Rust
+//! - Read `.dbc` or `.arxml` CAN databases in Rust
+//! - Read `.asc` CAN trace files in Rust
 //! - Inspect messages, signals, and value tables
-//! - Integrate CAN signal definitions into automotive tools or simulations
 //!
 //! ## Related Standards
-//! - **DBC** format is a de-facto standard for describing CAN messages/signals
+//! - **DBC** and **ARXML** formats are de-facto standard for describing CAN messages/signals
+//! - **ASC** format is the most used to save CAN traces
 //! - Compatible with tools like Vector CANdb++, CANalyzer, or open-source alternatives
 //!
 //! ## License
 //! Licensed under the [MIT License](https://opensource.org/licenses/MIT).
 
-pub mod file;
-pub mod models;
+pub mod arxml;
+pub mod dbc;
+pub mod asc;
+#[doc(hidden)] pub mod types;
+
+// Top-level re-exports (appear under Crate Items → Structs)
+#[doc(inline)]
+pub use crate::types::{
+    abs_time::AbsoluteTime,
+    canframe::CanFrame,
+    canlog::CanLog,
+    database::Database,
+    message::Message,
+    node::Node,
+    signal::Signal,
+    siglog::SigLog,
+    msglog::MsgLog,
+};

@@ -11,7 +11,7 @@
 ///
 /// # Example
 /// ```
-/// use can_tools::models::node::Node;
+/// use can_tools::types::node::Node;
 ///
 /// let node = Node {
 ///     name: "Motor".to_string(),
@@ -24,4 +24,38 @@
 pub struct Node {
     pub name: String,
     pub comment: String,
+}
+
+impl Node {
+    /// Clears all metadata from this `Node`.
+    ///
+    /// This method resets string fields to empty strings 
+    ///
+    /// # Effects
+    /// - `name`, `comment` → `""`
+    pub fn clear(&mut self) {
+        self.name.clear();
+        self.comment.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_test_node() -> Node {
+        Node {
+            name: "Motor ECU".to_string(),
+            comment: "Comment about the Motor ECU.".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut node: Node = build_test_node();
+
+        // Check that everything is back to default value
+        node.clear();
+        assert_eq!(node, Node::default());
+    }
 }

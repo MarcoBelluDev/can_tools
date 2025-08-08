@@ -1,4 +1,15 @@
-use crate::models::database::Database;
+//! # dbc
+//!
+//! `dbc` is the module to work with .dbc files
+
+pub(crate) mod version;
+pub(crate) mod basic_info;
+pub(crate) mod nodes;
+pub(crate) mod messages;
+pub(crate) mod signals;
+
+use crate::types::database::Database;
+use crate::dbc;
 
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -9,8 +20,11 @@ use encoding_rs::WINDOWS_1252;
 ///
 /// This function reads a DBC file from disk, parses its content line by line,
 /// and fills the [`Database`] structure with all parsed information:
+/// - **Name** (from `BA_ "DBName"` line)
 /// - **Version** (from `VERSION` line)
-/// - **Bit timing** (from `BS_` line)
+/// - **Baudrate** (from `BA_ "Baudrate"` line)
+/// - **Baudrate CAN FD** (from `BA_ "BaudrateCANFD"` line)
+/// - **BusType** (from `BA_ "BusType"` line)
 /// - **Nodes** (from `BU_` line)
 /// - **Messages** (from `BO_` lines)
 /// - **Signals** (from `SG_` lines)
@@ -36,9 +50,9 @@ use encoding_rs::WINDOWS_1252;
 ///
 /// # Example
 /// ```no_run
-/// use can_tools::file::dbc::parse;
+/// use can_tools::dbc;
 ///
-/// let db = parse("example.dbc").expect("Failed to parse DBC file");
+/// let db = dbc::parse_from_file("example.dbc").expect("Failed to parse DBC file");
 /// println!("Parsed {} messages", db.messages.len());
 /// ```
 ///
@@ -47,9 +61,14 @@ use encoding_rs::WINDOWS_1252;
 /// - Internal parsing details are handled by [`Database`] methods and are **not** part of the public API.
 /// - Parsing stops only at the end of the file; malformed lines are skipped.
 ///
-pub fn parse(path: &str) -> Result<Database, String> {
-    let file = File::open(path).map_err(|e| format!("Error opening file: {}", e))?;
-    let mut reader = BufReader::new(file);
+pub fn parse_from_file(path: &str) -> Result<Database, String> {
+    // check if provided file has .asc format
+    if !path.ends_with(".dbc") {
+        return Err(format!("Not a valid .dbc file format"));
+    }
+
+    let file: File = File::open(path).map_err(|e| format!("Error opening file: {}", e))?;
+    let mut reader: BufReader<File> = BufReader::new(file);
 
     // read raw byted
     let mut bytes = Vec::new();
@@ -89,26 +108,26 @@ pub fn parse(path: &str) -> Result<Database, String> {
         }
 
         if line.to_lowercase().starts_with("version") {
-            db.parse_version(line);
-        } else if line.to_lowercase().starts_with("bs_") {
-            db.parse_bit_timing(line);
+            dbc::version::fct(&mut db, line);
+        } else if line.to_lowercase().starts_with("ba_ ") {
+            dbc::basic_info::fct(&mut db, line);
         } else if line.to_lowercase().starts_with("bu_") {
-            db.parse_nodes(line);
+            dbc::nodes::fct(&mut db, line);
         } else if line.to_lowercase().starts_with("bo_ ") {
             if line.split_whitespace().count() >= 4 {
-                db.parse_messages(line);
+                dbc::messages::fct(&mut db, line);
             }
         } else if line.to_lowercase().starts_with("sg_") {
             if line.split_whitespace().count() >= 5 {
-                db.parse_signal(line);
+                dbc::signals::fct(&mut db, line);
             }
         } else if line.to_lowercase().starts_with("bo_tx_bu_") {
             if line.split_whitespace().count() >= 2 {
-                db.parse_add_nodes(line);
+                dbc::messages::tx_nodes(&mut db, line);
             }
         } else if line.to_lowercase().starts_with("cm_ bo_") {
             if line.split_whitespace().count() >= 2 {
-                db.parse_message_comments(line);
+                dbc::messages::comments(&mut db, line);
             }
         } else if line.to_lowercase().starts_with("cm_ sg_") {
             let mut full_comment_line: String = line.to_string();
@@ -117,7 +136,7 @@ pub fn parse(path: &str) -> Result<Database, String> {
                 full_comment_line.push('\n');
                 full_comment_line.push_str(lines[i].trim());
             }
-            db.parse_signal_comments(&full_comment_line);
+            dbc::signals::comments(&mut db, line);
         } else if line.to_lowercase().starts_with("cm_ bu_") {
             let mut full_comment_line: String = line.to_string();
             while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
@@ -125,9 +144,9 @@ pub fn parse(path: &str) -> Result<Database, String> {
                 full_comment_line.push('\n');
                 full_comment_line.push_str(lines[i].trim());
             }
-            db.parse_node_comments(&full_comment_line);
+            dbc::nodes::comments(&mut db, line);
         } else if line.to_lowercase().starts_with("val_") && line.split_whitespace().count() >= 3 {
-            db.parse_value_table(line);
+            dbc::signals::value_table(&mut db, line);
         }
 
         i += 1;
@@ -137,8 +156,8 @@ pub fn parse(path: &str) -> Result<Database, String> {
 }
 
 #[test]
-fn test_parse_simple_dbc_extended() {
-    use crate::models::signal::Signal;
+fn test_parse_from_file() {
+    use crate::types::signal::Signal;
     use std::collections::HashMap;
 
     let dbc_content = r#"
@@ -174,8 +193,6 @@ NS_ :
 	BU_BO_REL_
 	SG_MUL_VAL_
 
-BS_: 125000
-
 BU_: Motor Infotainment Gateway
 
 BO_ 2527679645 Motor_01: 8 Motor
@@ -199,6 +216,11 @@ CM_ SG_ 2527679645 Failure "This comment tells you everything about Motor Failur
 CM_ BU_ Motor "Motor ECU is really important for vehicle motion."
 CM_ BU_ Gateway "Gatway ECU must forward frames between vehicle networks."
 
+BA_ "Baudrate" 500000;
+BA_ "BusType" "CAN FD";
+BA_ "DBName" "TestCAN";
+BA_ "BaudrateCANFD" 2000000;
+
 VAL_ 2527679645 Status 1 "On" 0 "Off" ;
 VAL_ 2527679645 Overheat 1 "Overheat failure" 0 "No Overheat" ;
 VAL_ 2527679645 Engine_Speed 255 "Error";
@@ -206,15 +228,18 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
 "#;
 
     // Temporaneamente salvo il file
-    let tmp_path = std::env::temp_dir().join("test.dcb");
+    let tmp_path = std::env::temp_dir().join("test.dbc");
     std::fs::write(&tmp_path, dbc_content).unwrap();
 
     // Parsing
-    let db: Database = parse(tmp_path.to_str().unwrap()).expect("Failed to parse DBC");
+    let db: Database = parse_from_file(tmp_path.to_str().unwrap()).expect("Failed to parse DBC");
 
     // --- Database first checks ---
     assert_eq!(db.version, "1.0.2");
-    assert_eq!(db.bit_timing, "125000");
+    assert_eq!(db.baudrate, 500000);
+    assert_eq!(db.bustype, "CAN FD");
+    assert_eq!(db.baudrate_canfd, 2000000);
+    assert_eq!(db.name, "TestCAN");
 
     // --- Nodes ---
     let expected_node_names = vec!["Motor", "Infotainment", "Gateway"];
@@ -235,9 +260,10 @@ VAL_ 2527679645 Failure 1 "Generic Failure" 0 "No Failures" ;
     assert_eq!(db.messages.len(), 2);
     let msg = &db.messages[0];
     assert_eq!(msg.id, 2527679645);
-    assert_eq!(msg.id_hex, "0x96A9549D");
+    assert_eq!(msg.id_hex, "0x16A9549D");
     assert_eq!(msg.name, "Motor_01");
     assert_eq!(msg.byte_length, 8);
+    assert_eq!(msg.msgtype, "CAN");
     assert_eq!(msg.sender_nodes.len(), 2);
     assert_eq!(msg.sender_nodes[0].name, "Motor");
     assert_eq!(

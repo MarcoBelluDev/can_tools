@@ -1,6 +1,6 @@
 [package]
 name = "can_tools"
-version = "0.1.8"
+version = "1.0.0"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
 description = "Mix of useful tools for CAN bus"
@@ -17,4 +17,8 @@ name = "can_tools"
 path = "src/lib.rs"
 
 [dependencies]
+chrono = "0.4.41"
 encoding_rs = "0.8.35"
+quick-xml = "0.38.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_derive = "1.0.219"

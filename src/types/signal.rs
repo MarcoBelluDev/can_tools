@@ -1,4 +1,4 @@
-use crate::models::node::Node;
+use crate::types::node::Node;
 use std::collections::HashMap;
 
 /// Represents a signal within a CAN message as defined in a DBC file.
@@ -26,7 +26,7 @@ use std::collections::HashMap;
 ///
 /// # Example
 /// ```
-/// use can_tools::models::signal::Signal;
+/// use can_tools::types::signal::Signal;
 /// let sig = Signal::default();
 /// assert!(sig.receiver_nodes.is_empty());
 /// ```
@@ -63,8 +63,8 @@ impl Signal {
     ///
     /// # Example
     /// ```
-    /// # use can_tools::models::signal::Signal;
-    /// # use can_tools::models::node::Node;
+    /// # use can_tools::types::signal::Signal;
+    /// # use can_tools::types::node::Node;
     /// let sig = Signal::default();
     /// assert!(sig.get_receiver_nodes_by_name("Gateway").is_none());
     /// ```
@@ -87,8 +87,8 @@ impl Signal {
     ///
     /// # Example
     /// ```
-    /// # use can_tools::models::signal::Signal;
-    /// # use can_tools::models::node::Node;
+    /// # use can_tools::types::signal::Signal;
+    /// # use can_tools::types::node::Node;
     /// let mut sig = Signal::default();
     /// if let Some(node) = sig.get_receiver_nodes_by_name_mut("Motor") {
     ///     node.comment = "Updated comment".to_string();
@@ -98,6 +98,33 @@ impl Signal {
         self.receiver_nodes
             .iter_mut()
             .find(|node| node.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Clears all metadata, receiver nodes, and value table from this `Signal`.
+    ///
+    /// This method resets string fields to empty strings and numeric fields to `0`,
+    /// empties the `receiver_nodes` vectors,
+    /// and empties the `value_table` HashMap.
+    ///
+    /// # Effects
+    /// - `name`, `unit_of_measurement`, `comment` → `""`
+    /// - `bit_start`, `bit_length` and all other numeric parameters → `0`
+    /// - `receiver_nodes` → emptied (via `Vec::default`)
+    /// - `value_table` → emptied (via `HashMap::default`)
+    pub fn clear(&mut self) {
+        self.name.clear();
+        self.bit_start = 0;
+        self.bit_length = 0;
+        self.endian = 0;
+        self.sign = 0;
+        self.factor = 0.0;
+        self.offset = 0.0;
+        self.min = 0.0;
+        self.max = 0.0;
+        self.unit_of_measurement.clear();
+        self.receiver_nodes = Vec::default();
+        self.comment.clear();
+        self.value_table = HashMap::default();
     }
 }
 
@@ -168,5 +195,14 @@ mod tests {
 
         // Signal not existing
         assert!(sig.get_receiver_nodes_by_name_mut("FakeECU").is_none());
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut sig: Signal = build_test_signal();
+
+        // Check that everything is back to default value
+        sig.clear();
+        assert_eq!(sig, Signal::default());
     }
 }

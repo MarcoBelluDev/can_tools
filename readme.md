@@ -1,48 +1,53 @@
 # can_tools
 
-`can_tools` is a Rust library for parsing [DBC files](https://en.wikipedia.org/wiki/DBC_(file_format))
-used in automotive applications to describe CAN network messages and signals.
+[![Crates.io](https://img.shields.io/crates/v/can_tools.svg)](https://crates.io/crates/can_tools)
+[![Docs.rs](https://img.shields.io/docsrs/can_tools)](https://docs.rs/can_tools)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
 
-It provides a clean and easy-to-use API to read `.dbc` files, inspect messages, signals, and nodes,
-and access comments and value tables.
-
----
-
-## ✨ Features
-
-- Parses complete `.dbc` files into structured Rust types
-- Reads:
-  - **Version** information
-  - **Bit timing**
-  - **Nodes**
-  - **Messages**
-  - **Signals**
-  - **Comments**
-  - **Value tables**
-- Case-insensitive search utilities for messages, signals, and nodes
-- Simple API: one call to [`parse`](src/file/dbc.rs) produces a ready-to-use `Database`
+`can_tools` is a Rust library that provides a small, fast toolkit for working with automotive CAN data.
+It focuses on **parsing databases** (DBC/ARXML) into well-typed Rust structures and **reading CAN traces** (ASC).
 
 ---
 
-## 📦 Installation
+## Features
+
+- Parse full CAN **databases** from both
+  - [`.dbc`](https://en.wikipedia.org/wiki/DBC_(file_format)) and
+  - [`.arxml`](https://autosar.readthedocs.io/en/latest/basics.html)
+  into structured Rust types.
+- Read complete **`.asc`** CAN trace files.
+- Convenient, strongly typed data model with helpful getters.
+- No unsafe code; pure Rust.
+
+> If you're building tools around Vector DBC/CANdb++ or AUTOSAR ARXML, this crate gives you a clean, idiomatic Rust API.
+
+---
+
+## Installation
 
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-can_tools = "0.1.7"
+can_tools = "*"
 ```
+
+> Tip: replace `*` with the latest version shown on crates.io for reproducible builds.
+
+This crate targets Rust **edition 2024**.
 
 ---
 
-## 🚀 Example
+## Quick Start
 
-```rust
-use can_tools::file::parse;
+### Parse a DBC and inspect messages
+
+```rust,no_run
+use can_tools::dbc;
 
 fn main() -> Result<(), String> {
     // Parse the DBC file
-    let db = parse("path/to/file.dbc")?;
+    let db = dbc::parse_from_file("path/to/file.dbc")?;
 
     println!("DBC Version: {}", db.version);
     println!("Messages: {}", db.messages.len());
@@ -57,16 +62,50 @@ fn main() -> Result<(), String> {
 }
 ```
 
+### Parse ARXML (may contain multiple CAN clusters)
+
+```rust,no_run
+use can_tools::arxml;
+
+fn main() -> Result<(), String> {
+    let dbs = arxml::parse("path/to/file.arxml")?; // -> Vec<can_tools::Database>
+    for db in dbs {
+        println!("Cluster: {}  Type: {}  Version: {}", db.name, db.bustype, db.version);
+        println!("Messages: {}", db.messages.len());
+    }
+    Ok(())
+}
+```
+
+### Read a CAN trace (`.asc`)
+
+```rust,no_run
+use can_tools::asc;
+
+fn main() -> Result<(), String> {
+    // If you have a database for symbol names, pass Some(&db). Otherwise pass None.
+    let log = asc::parse_from_file("path/to/trace.asc", None)?; // -> can_tools::CanLog
+
+    println!("Frames read: {}", log.all_frame.len());
+    println!("Unique (id, channel): {}", log.last_id_chn_frame.len());
+
+    Ok(())
+}
+```
+
 ---
 
-## 📊 Data Model
+## Data Model (Core Types)
 
 ```text
 ┌───────────────────────────────────────┐
 │               Database                │
 │───────────────────────────────────────│
+│ name: String                          │
+│ bustype: String                       │
+│ baudrate: usize                       │
+│ baudrate_canfd: usize                 │
 │ version: String                       │
-│ bit_timing: String                    │
 │ nodes: Vec<Node>                      │
 │ messages: Vec<Message>                │
 └───────────────────────┬───────────────┘
@@ -81,6 +120,7 @@ fn main() -> Result<(), String> {
 │ byte_length: usize                    │
 │ sender_nodes: Vec<Node>               │
 │ signals: Vec<Signal>                  │
+│ comment: String                       │
 └───────────────────────┬───────────────┘
                         │
                         ▼
@@ -99,38 +139,75 @@ fn main() -> Result<(), String> {
 │ unit_of_measurement: String           │
 │ receiver_nodes: Vec<Node>             │
 │ value_table: HashMap<i32, String>     │
+│ comment: String                       │
 └───────────────────────────────────────┘
 
 Node: represents a CAN ECU (sender or receiver)
 ```
 
----
-
-## 📚 Main Types
-
-- **[`Database`](src/models/database.rs)**  
-  Holds the parsed DBC file structure, including version, bit timing, all `Node`s, and `Message`s.
-
-- **[`Message`](src/models/message.rs)**  
-  Represents a CAN message. Contains message ID, name, sender nodes, and its list of `Signal`s.
-
-- **[`Signal`](src/models/signal.rs)**  
-  Represents a data field within a CAN message, including bit position, length, scaling factor, unit,
-  receiver nodes, and optional value descriptions.
-
-- **[`Node`](src/models/node.rs)**  
-  Represents a CAN network node (ECU) that can send or receive messages.
+The crate re-exports the most important types at the top level for convenience:
+`Database`, `Message`, `Signal`, `Node`, `CanLog`, `CanFrame`, `AbsoluteTime`, `SigLog`, `MsgLog`.
 
 ---
 
-## 📜 License
+## When to Use
 
-Licensed under the [MIT License](LICENSE).
+Use `can_tools` when you need to:
+
+- Load and analyze **DBC** or **ARXML** CAN databases in Rust.
+- Read and process **ASC** CAN trace files.
+- Inspect messages, signals, senders/receivers, and enumerated **value tables**.
+- Map raw frames to symbolic names using your database.
 
 ---
 
-## 🔗 Related Links
+## API Highlights
 
-- [DBC File Format (Wikipedia)](https://en.wikipedia.org/wiki/DBC_(file_format))
-- [Vector CANdb++](https://vector.com)
-- [docs.rs Documentation](https://docs.rs/can_tools)
+- `dbc::parse_from_file(path) -> Result<Database, String>`
+- `arxml::parse(path) -> Result<Vec<Database>, String>`
+- `asc::parse_from_file(path, db_opt) -> Result<CanLog, String>`
+- `Database::get_message_by_name(&self, name) -> Option<&Message>`
+- `Message::get_signal_by_name(&self, name) -> Option<&Signal>`
+
+See the full docs on **docs.rs** for more.
+
+---
+
+## Related Standards & Tools
+
+- **DBC** and **ARXML** are widely used to describe signals/messages for CAN and CAN-FD.
+- **ASC** is a common ASCII trace format for log files.
+- Compatible with workflows involving Vector CANdb++, CANalyzer/CANoe, and many open-source tools.
+
+---
+
+## Roadmap (short)
+- Expanded ARXML coverage and robustness.
+- More helpers for signal decoding and physical value calculation.
+- Additional trace formats.
+
+Contributions are welcome—see below!
+
+---
+
+## Contributing
+
+Issues and PRs are appreciated. Please run tests and `cargo fmt`/`cargo clippy` before submitting.
+
+```bash
+cargo test
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+---
+
+## License
+
+Licensed under the [MIT License](./LICENSE).
+
+---
+
+## Acknowledgements
+
+Inspired by everyday workflows around DBC/ARXML/CAN trace handling in automotive engineering.
