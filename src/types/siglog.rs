@@ -15,7 +15,7 @@ pub struct SigLog {
     pub min: f64,
     pub max: f64,
     pub value_table: HashMap<i32, String>,
-    pub values: HashMap<f64, f64>, // couple value / timestamp
+    pub values: Vec<[f64; 2]>, // couple value / timestamp
 }
 
 impl SigLog {
@@ -33,6 +33,6 @@ impl SigLog {
         self.min = 0.0;
         self.max = 0.0;
         self.value_table = HashMap::default();
-        self.values = HashMap::default();
+        self.values = Vec::default();
     }
 }

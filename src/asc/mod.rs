@@ -2,7 +2,7 @@
 //!
 //! `asc` is the module to work with .asc files
 
-pub(crate) mod frame_parse;
+pub(crate) mod line;
 pub(crate) mod abs_time;
 
 use std::collections::HashMap;
@@ -21,18 +21,24 @@ use crate::{Database, CanLog, CanFrame};
 ///
 /// Absolute time handling:
 /// - The first line matching `abs_time::from_line` is taken as the **start time**.
-/// - From that point on, `frame::from_line` formats `absolute_time` as
+/// - From that point on, `asc::line::parse` formats each frame’s `absolute_time` as
 ///   `start + timestamp_value` using `"%Y-%m-%d %H:%M:%S%.3f"`.
+///   If no `date` header is found, frames fall back to a synthetic time string
+///   derived from the timestamp (see `seconds_to_hms_string`).
 ///
 /// # Parameters
-/// - `path`: Path to the `.asc` file. The function requires it to end with `.asc`.
+/// - `path`: Path to the `.asc` file. Must end with `.asc`.
+/// - `db_list`: Mapping **channel → Database** used to enrich frames (e.g., message
+///   name and sender). If a channel has no entry, enrichment is skipped.
+///   Extended IDs in traces may end with `x`/`X`; the parser trims that and adds `0x`
+///   before calling `Database::get_message_by_id_hex`.
 ///
 /// # Returns
 /// - `Ok(CanLog)` on success, where:
 ///   - `all_frame` contains **all** parsed frames, in file order;
 ///   - `last_id_chn_frame` contains **one** frame per `(id, channel)`—the one
 ///     with the greatest `timestamp_value`;
-///   - `absolute_time` is set if a `date` header was found, otherwise left at default.
+///   - `absolute_time` (in `CanLog`) is set if a `date` header was found, otherwise left at default.
 /// - `Err(String)` if the extension is not `.asc` or if the file cannot be opened.
 ///
 /// # Errors
@@ -41,18 +47,24 @@ use crate::{Database, CanLog, CanFrame};
 ///
 /// # Behavior & Invariants
 /// - Only the **first** valid `date` header is used; subsequent lines are treated as data.
-/// - Frame parsing is delegated to `asc::frame::from_line`, which infers protocol
+/// - Frame parsing is delegated to `asc::line::parse`, which infers protocol
 ///   (`"CAN"` vs `"CAN FD"`) from payload length.
-/// - The `(id, channel)` key uses the raw `id` string as found in the log (e.g. it may
-///   include suffixes like `'x'` for extended identifiers) and `channel` as `usize`.
+/// - The `(id, channel)` key uses the raw `id` string from the log (which may
+///   include an `'x'`/`'X'` suffix for extended identifiers) and `channel` as `usize`.
+/// - Lines may contain optional ECU tokens between `direction` and the `d` marker; the
+///   line parser locates `d` dynamically and reads exactly `length` data bytes.
 ///
 /// # Complexity
 /// - Time: O(N) over the number of lines (single pass).
 /// - Space: O(U) for the number of unique `(id, channel)` pairs.
 ///
 /// # Example
-/// ```text
-/// let log = can_tools::asc::parse_from_file("trace.asc")?;
+/// ```rust no_run
+/// use std::collections::HashMap;
+/// use can_tools::{asc, Database};
+///
+/// let db_by_channel: HashMap<usize, Database> = HashMap::new();
+/// let log = asc::parse_from_file("trace.asc", &db_by_channel).expect("parse failed");
 /// println!("Total frames: {}", log.all_frame.len());
 /// println!("Unique id/channel last frames: {}", log.last_id_chn_frame.len());
 /// ```
@@ -60,6 +72,7 @@ use crate::{Database, CanLog, CanFrame};
 /// # Notes
 /// - Lines are streamed with `BufRead::lines()`. Non-frame lines are ignored unless
 ///   they match the `date` header format handled by `abs_time::from_line`.
+
 pub fn parse_from_file(path: &str, db_list: &HashMap<usize, Database>) -> Result<CanLog, String> {
     // check if provided file has .asc format
     if !path.ends_with(".asc") {
@@ -93,24 +106,7 @@ pub fn parse_from_file(path: &str, db_list: &HashMap<usize, Database>) -> Result
                 continue; // skip abs_time check for rest of the line
             }
         }
-        if let Some(frame) = frame_parse::from_line(&line, &log.absolute_time, db_list) {
-            // all CanFrame needs to be pushed in this vector
-            log.all_frame.push(frame.clone());
-
-            // key = (id, channel)
-            let key: (String, usize) = (frame.id.clone(), frame.channel.clone());
-
-            // check if key of current CanFrame is already present in HashMap
-            // if it is already present, consider only the CanFrame with biggest timestamp
-            latest_by_id_channel
-                .entry(key)
-                .and_modify(|existing| {
-                    if frame.timestamp_value > existing.timestamp_value {
-                        *existing = frame.clone();
-                    }
-                })
-                .or_insert(frame.clone());
-        }
+        line::parse(&line, &mut log, db_list, &mut latest_by_id_channel);
     }
 
     // convert HashMap into the Vec<CanFrame> with only last Frame per id/channel combination
@@ -122,200 +118,200 @@ pub fn parse_from_file(path: &str, db_list: &HashMap<usize, Database>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::NaiveDateTime;
     use std::collections::HashMap;
-    use std::fs::{self, File};
-    use std::io::Write;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    // Pull in crate-level types the parser fills.
-    use crate::Database;
-    use crate::types::canframe::CanFrame;
-    use crate::types::canlog::CanLog;
-
-    // If your Message/Node types are re-exported, these will work.
-    // Otherwise, adjust the paths (e.g., crate::types::message::Message).
-    use crate::Message;
-    use crate::Node;
-
-    // ----------------------------------
-    // Helpers
-    // ----------------------------------
-
-    fn tmp_path_with_name(name: &str) -> PathBuf {
-        // Create a (mostly) unique filename under the OS temp dir
-        let mut p = std::env::temp_dir();
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        p.push(format!("{}_{}.asc", name, nanos));
-        p
-    }
-
-    fn write_asc(contents: &str) -> PathBuf {
-        let path = tmp_path_with_name("trace");
-        let mut f = File::create(&path).expect("create temp asc");
-        f.write_all(contents.as_bytes()).expect("write temp asc");
-        path
-    }
-
-    fn empty_dbmap() -> HashMap<usize, Database> {
+    fn empty_db_list() -> HashMap<usize, Database> {
         HashMap::new()
     }
 
-    // Build a HashMap<channel, Database> containing a minimal message matching (id_hex, msg_name, sender)
-    fn db_map_with_msg(channel: usize, id_hex: &str, msg_name: &str, sender: &str) -> HashMap<usize, Database> {
-        let mut db = Database::default();
-
-        let mut msg = Message::default();
-        msg.id_hex = id_hex.to_string();
-        msg.name = msg_name.to_string();
-
-        let mut node = Node::default();
-        node.name = sender.to_string();
-        msg.sender_nodes = vec![node];
-
-        db.messages.push(msg);
-
-        let mut map = HashMap::new();
-        map.insert(channel, db);
-        map
-    }
-
-    fn get_last_by_id_channel<'a>(log: &'a CanLog, id: &str, chn: usize) -> Option<&'a CanFrame> {
-        log.last_id_chn_frame.iter().find(|f| f.id == id && f.channel == chn)
-    }
-
-    // ----------------------------------
-    // Tests
-    // ----------------------------------
-
     #[test]
-    fn error_if_not_asc_extension() {
-        let res = parse_from_file("whatever.txt", &empty_dbmap());
-        assert!(res.is_err());
-    }
+    fn parse_basic_no_ecu_name() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
 
-    #[test]
-    fn error_if_cannot_open_file() {
-        let res = parse_from_file("definitely-does-not-exist/foobar.asc", &empty_dbmap());
-        assert!(res.is_err());
-    }
+        let line = "0.016728 1  17334410x  Rx   d 8 3E 42 03 00 39 00 03 01";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
 
-    #[test]
-    fn parses_without_date_header_uses_fallback_absolute_time() {
-        // No "date ..." line -> absolute_time should use fallback formatter
-        let asc = r#"
-base hex  timestamps absolute
-internal events logged
-0.016728 1  17334410x       Rx   d 8 3E 42 03 00 39 00 03 01
-"#;
-        let path = write_asc(asc);
-        let log = parse_from_file(path.to_str().unwrap(), &empty_dbmap()).expect("parse ok");
-
-        // One frame parsed
         assert_eq!(log.all_frame.len(), 1);
-        assert_eq!(log.last_id_chn_frame.len(), 1);
-
         let f = &log.all_frame[0];
         assert_eq!(f.timestamp, "0.016728");
-        assert_eq!(f.protocol, "CAN");
+        assert!((f.timestamp_value - 0.016728).abs() < 1e-9);
+        assert_eq!(f.channel, 1);
+        assert_eq!(f.id, "17334410x");
+        assert_eq!(f.direction, "Rx");
         assert_eq!(f.byte_length_value, 8);
         assert_eq!(f.data, "3E 42 03 00 39 00 03 01");
-        // Fallback absolute time (rounded to 17 ms)
+        assert_eq!(f.protocol, "CAN");
+        // seconds_to_hms_string arrotonda a millisecondo
         assert_eq!(f.absolute_time, "2025-01-01 00:00:00.017");
 
-        // Cleanup
-        let _ = fs::remove_file(path);
+        let key = ("17334410x".to_string(), 1usize);
+        let lf = latest.get(&key).expect("missing latest frame");
+        assert_eq!(lf.timestamp_value, f.timestamp_value);
     }
 
     #[test]
-    fn parses_with_date_header_uses_first_date_and_keeps_latest_per_id_channel() {
-        // Multiple frames for same (id, channel); the latest timestamp wins in last_id_chn_frame.
-        // Also ensure parser stops data at "Length =".
-        let asc = r#"
-date Fri May 12 04:16:06.532 pm 2023
-base hex  timestamps absolute
-internal events logged
-0.000000 1  100             Rx   d 8 01 02 03 04 05 06 07 08
-0.010000 1  100             Rx   d 8 11 12 13 14 15 16 17 18
-0.020000 1  100             Rx   d 8 21 22 23 24 25 26 27 28 Length = 8
-0.005000 2  200x            Tx   d 4 AA BB CC DD
-some junk line that should be ignored
-"#;
-        let path = write_asc(asc);
-        let log = parse_from_file(path.to_str().unwrap(), &empty_dbmap()).expect("parse ok");
+    fn parse_with_ecu_single_word_between_direction_and_d() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
 
-        // All parsed frames (4 valid frame lines)
-        assert_eq!(log.all_frame.len(), 4);
+        let line = "0.016728 1  17334410x  Rx  Gateway   d 8 3E 42 03 00 39 00 03 01";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
 
-        // Latest-per-(id, channel): we expect 2 entries -> (100,1) and (200x,2)
-        assert_eq!(log.last_id_chn_frame.len(), 2);
-
-        // (100,1) must be the one at 0.020000, and data must stop before "Length"
-        let f_100_ch1 = get_last_by_id_channel(&log, "100", 1).expect("missing (100,1)");
-        assert_eq!(f_100_ch1.timestamp, "0.020000");
-        assert_eq!(f_100_ch1.data, "21 22 23 24 25 26 27 28");
-        // Absolute time = 2023-05-12 16:16:06.532 + 20ms = .552
-        assert_eq!(f_100_ch1.absolute_time, "2023-05-12 16:16:06.552");
-
-        // (200x,2) only appears once at 0.005000
-        let f_200x_ch2 = get_last_by_id_channel(&log, "200x", 2).expect("missing (200x,2)");
-        assert_eq!(f_200x_ch2.timestamp, "0.005000");
-        assert_eq!(f_200x_ch2.data, "AA BB CC DD");
-
-        // Cleanup
-        let _ = fs::remove_file(path);
+        assert_eq!(log.all_frame.len(), 1);
+        let f = &log.all_frame[0];
+        assert_eq!(f.direction, "Rx");
+        assert_eq!(f.byte_length_value, 8);
+        assert_eq!(f.data, "3E 42 03 00 39 00 03 01");
+        assert_eq!(f.protocol, "CAN");
     }
 
     #[test]
-    fn uses_per_channel_database_for_name_and_sender() {
-        // Only channel 1 has a DB with id "100"
-        let db_list = db_map_with_msg(1, "0x100", "MSG100", "ECU1");
+    fn parse_with_ecu_multiword_between_direction_and_d() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
 
-        let asc = r#"
-date Fri May 12 04:16:06.532 pm 2023
-0.000000 1  100             Rx   d 8 01 02 03 04 05 06 07 08
-0.005000 2  200x            Tx   d 4 AA BB CC DD
-"#;
+        let line = "0.016728 1  17334410x  Rx  Nome ECU   d 8 3E 42 03 00 39 00 03 01";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
 
-        let path = write_asc(asc);
-        let log = parse_from_file(path.to_str().unwrap(), &db_list).expect("parse ok");
-
-        // Frame on channel 1, id "100" -> should be decoded
-        let f_100_ch1 = get_last_by_id_channel(&log, "100", 1).expect("missing (100,1)");
-        assert_eq!(f_100_ch1.name, "MSG100");
-        assert_eq!(f_100_ch1.sender_node, "ECU1");
-
-        // Frame on channel 2, no DB for ch2 -> name/sender should be empty
-        let f_200x_ch2 = get_last_by_id_channel(&log, "200x", 2).expect("missing (200x,2)");
-        assert_eq!(f_200x_ch2.name, "");
-        assert_eq!(f_200x_ch2.sender_node, "");
-
-        // Cleanup
-        let _ = fs::remove_file(path);
+        assert_eq!(log.all_frame.len(), 1);
+        let f = &log.all_frame[0];
+        assert_eq!(f.direction, "Rx");
+        assert_eq!(f.byte_length_value, 8);
+        assert_eq!(f.data, "3E 42 03 00 39 00 03 01");
     }
 
     #[test]
-    fn ignores_non_frame_lines_and_secondary_date_headers() {
-        // Only the first valid "date ..." line matters. Later "date" lines should be ignored.
-        let asc = r#"
-date Fri May 12 04:16:06.000 pm 2023
-this line should be ignored
-0.001000 1  123             Rx   d 1 01
-date Mon Jan 01 01:00:00.000 am 2024
-0.002000 1  123             Rx   d 1 02
-"#;
-        let path = write_asc(asc);
-        let log = parse_from_file(path.to_str().unwrap(), &empty_dbmap()).expect("parse ok");
+    fn parse_accepts_uppercase_d_marker() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        let line = "0.010000 1  7C1  Rx   D 4 6C 0D 01 00";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
+
+        assert_eq!(log.all_frame.len(), 1);
+        let f = &log.all_frame[0];
+        assert_eq!(f.id, "7C1");
+        assert_eq!(f.byte_length_value, 4);
+        assert_eq!(f.data, "6C 0D 01 00");
+        assert_eq!(f.protocol, "CAN");
+    }
+
+    #[test]
+    fn parse_can_fd_when_length_gt_8() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        let line = "0.030000 1  17334410x  Rx   d 12 11 22 33 44 55 66 77 88 99 AA BB CC";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
+
+        assert_eq!(log.all_frame.len(), 1);
+        let f = &log.all_frame[0];
+        assert_eq!(f.byte_length_value, 12);
+        assert_eq!(f.protocol, "CAN FD");
+        assert_eq!(f.data, "11 22 33 44 55 66 77 88 99 AA BB CC");
+    }
+
+    #[test]
+    fn parse_ignores_trailing_after_exact_length() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        let line = "0.020000 1  7C1  Rx   d 4 AA BB CC DD Length = 32 anything else";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
+
+        assert_eq!(log.all_frame.len(), 1);
+        let f = &log.all_frame[0];
+        assert_eq!(f.byte_length_value, 4);
+        assert_eq!(f.data, "AA BB CC DD");
+    }
+
+    #[test]
+    fn parse_returns_early_if_not_enough_data_bytes() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        // dichiara 6 byte, ma fornisce solo 5
+        let line = "0.050000 1  7C1  Rx   d 6 01 02 03 04 05";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
+
+        // nessun frame aggiunto
+        assert!(log.all_frame.is_empty());
+        assert!(latest.is_empty());
+    }
+
+    #[test]
+    fn keeps_latest_by_id_and_channel() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        let l1 = "0.100000 1  7C1  Rx   d 4 01 02 03 04";
+        let l2 = "0.200000 1  7C1  Rx   d 4 05 06 07 08";
+        crate::asc::line::parse(l1, &mut log, &db_list, &mut latest);
+        crate::asc::line::parse(l2, &mut log, &db_list, &mut latest);
 
         assert_eq!(log.all_frame.len(), 2);
-        // Latest is 0.002000
-        let f = get_last_by_id_channel(&log, "123", 1).expect("missing (123,1)");
-        assert_eq!(f.timestamp, "0.002000");
-        // Absolute time should be based on the FIRST date header (May 12, 2023 16:16:06.000)
-        // 2 ms after -> .002
-        assert_eq!(f.absolute_time, "2023-05-12 16:16:06.002");
+        let key = ("7C1".to_string(), 1usize);
+        let lf = latest.get(&key).expect("missing latest frame");
+        assert!((lf.timestamp_value - 0.200000).abs() < 1e-9);
+        assert_eq!(lf.data, "05 06 07 08");
+        assert_eq!(latest.len(), 1);
+    }
 
-        // Cleanup
-        let _ = fs::remove_file(path);
+    #[test]
+    fn absolute_time_when_start_time_is_set() {
+        let mut log = CanLog::default();
+        log.absolute_time.value =
+            Some(NaiveDateTime::parse_from_str("2025-03-10 12:00:00.000", "%Y-%m-%d %H:%M:%S%.3f").unwrap());
+
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        let line = "1.500000 1  7C1  Rx   d 4 00 00 00 00";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
+
+        let f = &log.all_frame[0];
+        assert_eq!(f.absolute_time, "2025-03-10 12:00:01.500");
+    }
+
+    #[test]
+    fn extended_id_uppercase_x_is_supported() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        let line = "0.010000 1  ABCDEF01X  Rx   d 2 00 FF";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
+
+        assert_eq!(log.all_frame.len(), 1);
+        let f = &log.all_frame[0];
+        assert_eq!(f.id, "ABCDEF01X");
+        assert_eq!(f.byte_length_value, 2);
+        assert_eq!(f.data, "00 FF");
+    }
+
+    #[test]
+    fn direction_tx_is_parsed_and_kept() {
+        let mut log = CanLog::default();
+        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let db_list = empty_db_list();
+
+        let line = "0.011000 2  1A2B  Tx   d 3 DE AD BE";
+        crate::asc::line::parse(line, &mut log, &db_list, &mut latest);
+
+        let f = &log.all_frame[0];
+        assert_eq!(f.channel, 2);
+        assert_eq!(f.direction, "Tx");
+        assert_eq!(f.byte_length_value, 3);
+        assert_eq!(f.data, "DE AD BE");
     }
 }
