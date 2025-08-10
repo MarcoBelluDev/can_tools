@@ -29,7 +29,7 @@ pub struct Message {
     pub id: u64,
     pub id_hex: String,
     pub name: String,
-    pub byte_length: usize,
+    pub byte_length: u16,
     pub msgtype: String,
     pub sender_nodes: Vec<Node>,
     pub signals: Vec<Signal>, // SG_

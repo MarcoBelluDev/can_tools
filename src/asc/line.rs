@@ -6,7 +6,7 @@ use crate::{CanFrame, Database, CanLog};
 // Example: 
 // 0.016728 1  17334410x       Rx   d 8 3E 42 03 00 39 00 03 01
 // 0.016728 1  17334410x       Rx   Name ECU d 8 3E 42 03 00 39 00 03 01
-pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<usize, Database>, latesy_by_id_channel: &mut HashMap<(String, usize), CanFrame>) {
+pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<u8, Database>, latesy_by_id_channel: &mut HashMap<(String, u8), CanFrame>) {
     // split line by whitespaces
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 7 {
@@ -14,7 +14,7 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<usize, Datab
     }
 
     // check timestamp is a valid number
-    let timestamp_value: f64 = match parts[0].parse() {
+    let timestamp_value: f32 = match parts[0].parse() {
         Ok(value) => value,
         Err(_) => return, // not found or not a valid number
     };
@@ -30,7 +30,7 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<usize, Datab
         absolute_time = seconds_to_hms_string(timestamp_value);
     }
 
-    let channel: usize = match parts[1].parse::<usize>() {
+    let channel: u8 = match parts[1].parse::<u8>() {
         Ok(value) => value,
         Err(_) => return, // not a valid number
     };
@@ -54,20 +54,20 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<usize, Datab
     }
     
     // look for 'd' or 'D' starting from parts[4]
-    let d_idx = match parts[4..].iter().position(|p| *p == "d" || *p == "D") {
+    let d_idx: usize = match parts[4..].iter().position(|p| *p == "d" || *p == "D") {
         Some(off) => 4 + off,
         None => return,
     };
 
     // part after 'd' is byte lenght
-    let byte_length_value: usize = match parts.get(d_idx + 1).and_then(|s| s.parse().ok()) {
+    let byte_length_value: u16 = match parts.get(d_idx + 1).and_then(|s| s.parse().ok()) {
         Some(v) => v,
         None => return,
     };
 
     // data are from d_ix + 2 until byte_length
     let data_start: usize = d_idx + 2;
-    let data_end: usize = data_start + byte_length_value;
+    let data_end: usize = data_start + (byte_length_value as usize);
     if data_end > parts.len() {
         return; // malformed line: not enough data bytes
     }
@@ -99,7 +99,7 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<usize, Datab
     log.all_frame.push(frame.clone());
 
     // key = (id, channel)
-    let key: (String, usize) = (frame.id.clone(), frame.channel.clone());
+    let key: (String, u8) = (frame.id.clone(), frame.channel.clone());
 
     // check if key of current CanFrame is already present in HashMap
     // if it is already present, consider only the CanFrame with biggest timestamp
@@ -113,13 +113,13 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<usize, Datab
         .or_insert(frame.clone());
 }
 
-fn seconds_to_hms_string(seconds: f64) -> String {
-    let total_millis: u64 = (seconds * 1000.0).round() as u64;
+fn seconds_to_hms_string(seconds: f32) -> String {
+    let total_millis: u32 = (seconds * 1000.0).round() as u32;
 
-    let hours: u64 = total_millis / 3_600_000;
-    let minutes: u64 = (total_millis % 3_600_000) / 60_000;
-    let secs: u64 = (total_millis % 60_000) / 1000;
-    let millis: u64 = total_millis % 1000;
+    let hours: u32 = total_millis / 3_600_000;
+    let minutes: u32 = (total_millis % 3_600_000) / 60_000;
+    let secs: u32 = (total_millis % 60_000) / 1000;
+    let millis: u32 = total_millis % 1000;
 
     format!(
         "2025-01-01 {:02}:{:02}:{:02}.{:03}",
@@ -133,14 +133,14 @@ mod tests {
     use chrono::NaiveDateTime;
     use std::collections::HashMap;
 
-    fn empty_db_list() -> HashMap<usize, Database> {
+    fn empty_db_list() -> HashMap<u8, Database> {
         HashMap::new()
     }
 
     #[test]
     fn parse_basic_no_ecu_name() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.016728 1  17334410x  Rx   d 8 3E 42 03 00 39 00 03 01";
@@ -159,7 +159,7 @@ mod tests {
         // 16.728 ms → arrotondato a 17 ms
         assert_eq!(f.absolute_time, "2025-01-01 00:00:00.017");
 
-        let key = ("17334410x".to_string(), 1usize);
+        let key = ("17334410x".to_string(), 1u8);
         let lf = latest.get(&key).expect("missing latest frame");
         assert_eq!(lf.timestamp_value, f.timestamp_value);
     }
@@ -271,7 +271,7 @@ mod tests {
         parse(l2, &mut log, &db_list, &mut latest);
 
         assert_eq!(log.all_frame.len(), 2);
-        let key = ("7C1".to_string(), 1usize);
+        let key: (String, u8) = ("7C1".to_string(), 1u8);
         let lf = latest.get(&key).expect("missing latest frame");
         assert!((lf.timestamp_value - 0.200000).abs() < 1e-12);
         assert_eq!(lf.data, "05 06 07 08");

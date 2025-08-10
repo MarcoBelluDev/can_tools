@@ -91,10 +91,10 @@ pub struct CanFrame {
     pub timestamp: String,
 
     /// Relative timestamp in seconds since trace start.
-    pub timestamp_value: f64,
+    pub timestamp_value: f32,
 
     /// Logger channel index (typically 1-based).
-    pub channel: usize,
+    pub channel: u8,
 
     /// `"CAN"` or `"CAN FD"` depending on payload size.
     pub protocol: String,
@@ -115,7 +115,7 @@ pub struct CanFrame {
     pub byte_length: String,
 
     /// Parsed payload length in bytes.
-    pub byte_length_value: usize,
+    pub byte_length_value: u16,
 
     /// Payload bytes as hex pairs separated by spaces.
     pub data: String,

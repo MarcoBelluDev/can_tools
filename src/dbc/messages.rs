@@ -18,7 +18,7 @@ pub(crate) fn fct(db: &mut Database, line: &str) {
     let id: u64 = parts[1].parse::<u64>().unwrap_or(0); // decimal id
     let id_hex: String = id_to_hex(id); // hexadecimal id
     let name: String = parts[2].trim_end_matches(':').to_string();
-    let byte_length: usize = parts[3].parse::<usize>().unwrap_or(0);
+    let byte_length: u16 = parts[3].parse::<u16>().unwrap_or(0);
     let msgtype: String = if byte_length <= 8 {
         "CAN".to_string()
     } else {

@@ -13,7 +13,7 @@ pub(crate) fn fct(db: &mut Database, line: &str) {
         parts.next(); // BA_
         parts.next(); // Baudrate
         if let Some(text) = parts.next() {
-            if let Ok(baudrate) = text.parse::<usize>() {
+            if let Ok(baudrate) = text.parse::<u32>() {
                 db.baudrate = baudrate;
             }
         }
@@ -36,7 +36,7 @@ pub(crate) fn fct(db: &mut Database, line: &str) {
         parts.next(); // BA_
         parts.next(); // Baudrate
         if let Some(text) = parts.next() {
-            if let Ok(baudrate_canfd) = text.parse::<usize>() {
+            if let Ok(baudrate_canfd) = text.parse::<u32>() {
                 db.baudrate_canfd = baudrate_canfd;
             }
         }

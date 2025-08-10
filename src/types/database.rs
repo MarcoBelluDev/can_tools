@@ -35,8 +35,8 @@ use crate::types::node::Node;
 pub struct Database {
     pub name: String,           
     pub bustype: String,        
-    pub baudrate: usize,       
-    pub baudrate_canfd: usize,  
+    pub baudrate: u32,       
+    pub baudrate_canfd: u32,  
     pub version: String,        
     pub nodes: Vec<Node>,       
     pub messages: Vec<Message>, 

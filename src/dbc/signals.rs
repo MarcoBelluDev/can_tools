@@ -30,24 +30,24 @@ pub(crate) fn fct(db: &mut Database, line: &str) {
     let endian_sign = bit_and_rest.next().unwrap_or(""); // "1+"
 
     let mut pos_len_parts = bit_pos_len.split('|');
-    let bit_start = pos_len_parts
+    let bit_start: u16 = pos_len_parts
         .next()
         .unwrap_or("0")
-        .parse::<usize>()
+        .parse::<u16>()
         .unwrap_or(0);
-    let bit_length = pos_len_parts
+    let bit_length: u16 = pos_len_parts
         .next()
         .unwrap_or("0")
-        .parse::<usize>()
+        .parse::<u16>()
         .unwrap_or(0);
 
-    let endian = endian_sign
+    let endian: u8 = endian_sign
         .chars()
         .nth(0)
         .unwrap_or('1')
         .to_digit(10)
-        .unwrap_or(1) as usize;
-    let sign = if endian_sign.contains('-') { 1 } else { 0 };
+        .unwrap_or(1) as u8;
+    let sign: u8 = if endian_sign.contains('-') { 1 } else { 0 };
 
     // Scale and offset
     let factor_offset_raw: &str = right_parts

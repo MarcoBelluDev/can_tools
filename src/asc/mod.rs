@@ -63,7 +63,7 @@ use crate::{Database, CanLog, CanFrame};
 /// use std::collections::HashMap;
 /// use can_tools::{asc, Database};
 ///
-/// let db_by_channel: HashMap<usize, Database> = HashMap::new();
+/// let db_by_channel: HashMap<u8, Database> = HashMap::new();
 /// let log = asc::parse_from_file("trace.asc", &db_by_channel).expect("parse failed");
 /// println!("Total frames: {}", log.all_frame.len());
 /// println!("Unique id/channel last frames: {}", log.last_id_chn_frame.len());
@@ -73,7 +73,7 @@ use crate::{Database, CanLog, CanFrame};
 /// - Lines are streamed with `BufRead::lines()`. Non-frame lines are ignored unless
 ///   they match the `date` header format handled by `abs_time::from_line`.
 
-pub fn parse_from_file(path: &str, db_list: &HashMap<usize, Database>) -> Result<CanLog, String> {
+pub fn parse_from_file(path: &str, db_list: &HashMap<u8, Database>) -> Result<CanLog, String> {
     // check if provided file has .asc format
     if !path.ends_with(".asc") {
         return Err(format!("Not a valid .asc file format"));
@@ -95,7 +95,7 @@ pub fn parse_from_file(path: &str, db_list: &HashMap<usize, Database>) -> Result
     }
 
     // temporary map: (id, channel) → last CanFrame per channel and id
-    let mut latest_by_id_channel: HashMap<(String, usize), CanFrame> = HashMap::new();
+    let mut latest_by_id_channel: HashMap<(String, u8), CanFrame> = HashMap::new();
 
     // read .asc file line by line
     for line in reader.lines().map_while(Result::ok) {
@@ -121,14 +121,14 @@ mod tests {
     use chrono::NaiveDateTime;
     use std::collections::HashMap;
 
-    fn empty_db_list() -> HashMap<usize, Database> {
+    fn empty_db_list() -> HashMap<u8, Database> {
         HashMap::new()
     }
 
     #[test]
     fn parse_basic_no_ecu_name() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.016728 1  17334410x  Rx   d 8 3E 42 03 00 39 00 03 01";
@@ -147,7 +147,7 @@ mod tests {
         // seconds_to_hms_string arrotonda a millisecondo
         assert_eq!(f.absolute_time, "2025-01-01 00:00:00.017");
 
-        let key = ("17334410x".to_string(), 1usize);
+        let key: (String, u8) = ("17334410x".to_string(), 1u8);
         let lf = latest.get(&key).expect("missing latest frame");
         assert_eq!(lf.timestamp_value, f.timestamp_value);
     }
@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn parse_with_ecu_single_word_between_direction_and_d() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.016728 1  17334410x  Rx  Gateway   d 8 3E 42 03 00 39 00 03 01";
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn parse_with_ecu_multiword_between_direction_and_d() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.016728 1  17334410x  Rx  Nome ECU   d 8 3E 42 03 00 39 00 03 01";
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn parse_accepts_uppercase_d_marker() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.010000 1  7C1  Rx   D 4 6C 0D 01 00";
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn parse_can_fd_when_length_gt_8() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.030000 1  17334410x  Rx   d 12 11 22 33 44 55 66 77 88 99 AA BB CC";
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn parse_ignores_trailing_after_exact_length() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.020000 1  7C1  Rx   d 4 AA BB CC DD Length = 32 anything else";
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn parse_returns_early_if_not_enough_data_bytes() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         // dichiara 6 byte, ma fornisce solo 5
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn keeps_latest_by_id_and_channel() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let l1 = "0.100000 1  7C1  Rx   d 4 01 02 03 04";
@@ -260,7 +260,7 @@ mod tests {
         crate::asc::line::parse(l2, &mut log, &db_list, &mut latest);
 
         assert_eq!(log.all_frame.len(), 2);
-        let key = ("7C1".to_string(), 1usize);
+        let key: (String, u8) = ("7C1".to_string(), 1u8);
         let lf = latest.get(&key).expect("missing latest frame");
         assert!((lf.timestamp_value - 0.200000).abs() < 1e-9);
         assert_eq!(lf.data, "05 06 07 08");
@@ -273,7 +273,7 @@ mod tests {
         log.absolute_time.value =
             Some(NaiveDateTime::parse_from_str("2025-03-10 12:00:00.000", "%Y-%m-%d %H:%M:%S%.3f").unwrap());
 
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "1.500000 1  7C1  Rx   d 4 00 00 00 00";
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn extended_id_uppercase_x_is_supported() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.010000 1  ABCDEF01X  Rx   d 2 00 FF";
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn direction_tx_is_parsed_and_kept() {
         let mut log = CanLog::default();
-        let mut latest: HashMap<(String, usize), CanFrame> = HashMap::new();
+        let mut latest: HashMap<(String, u8), CanFrame> = HashMap::new();
         let db_list = empty_db_list();
 
         let line = "0.011000 2  1A2B  Tx   d 3 DE AD BE";

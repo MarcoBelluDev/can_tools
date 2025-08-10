@@ -3,13 +3,13 @@ use std::collections::HashMap;
 #[derive(Default, Clone)]
 pub struct SigLog {
     pub name: String,
-    pub bit_start: usize,
-    pub bit_length: usize,
+    pub bit_start: u16,
+    pub bit_length: u16,
     /// Endianness:
     /// - `1` = little-endian (Intel)
     /// - `0` = big-endian (Motorola)
-    pub endian: usize,
-    pub sign: usize,
+    pub endian: u8,
+    pub sign: u8,
     pub factor: f64,
     pub offset: f64,
     pub min: f64,
