@@ -10,5 +10,4 @@ pub mod signal;
 pub mod abs_time;
 pub mod canlog;
 pub mod canframe;
-pub mod msglog;
 pub mod siglog;

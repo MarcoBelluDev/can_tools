@@ -39,6 +39,7 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<u8, Database
     let direction: String = parts[3].to_string();
     let mut name: String = String::new();
     let mut sender_node: String = String::new();
+    let mut comment: String = String::new();
 
     // check if there is a dbc in list for that channel
     if let Some(dbc) = db_list.get(&channel) {
@@ -50,6 +51,7 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<u8, Database
             if !msg.sender_nodes.is_empty() {
                 sender_node = msg.sender_nodes[0].name.clone(); // first sender
             }
+            comment = msg.comment.clone();
         }
     }
     
@@ -92,6 +94,7 @@ pub(crate) fn parse(line: &str, log: &mut CanLog, db_list: &HashMap<u8, Database
         byte_length: byte_length_value.to_string(),
         byte_length_value,
         data,
+        comment
     };
 
     // fill log.all_frame = Vec<CanFrame>

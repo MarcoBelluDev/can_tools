@@ -102,5 +102,4 @@ pub use crate::types::{
     node::Node,
     signal::Signal,
     siglog::SigLog,
-    msglog::MsgLog,
 };

@@ -119,6 +119,9 @@ pub struct CanFrame {
 
     /// Payload bytes as hex pairs separated by spaces.
     pub data: String,
+
+    /// Optional comment (empty if unknown).
+    pub comment: String,
 }
 
 impl CanFrame {
@@ -143,6 +146,7 @@ impl CanFrame {
     ///     byte_length: "8".into(),
     ///     byte_length_value: 8,
     ///     data: "3E 42 03 00 39 00 03 01".into(),
+    ///     comment: "test comment".into(),
     /// };
     ///
     /// frame.print_ordered();
@@ -174,6 +178,7 @@ impl CanFrame {
         println!("{:>w$}: {}", "byte_length", self.byte_length, w = w);
         println!("{:>w$}: {}", "byte_length_value", self.byte_length_value, w = w);
         println!("{:>w$}: {}", "data", self.data, w = w);
+        println!("{:>w$}: {}", "comment", self.comment, w = w);
     }
 
     /// Resets all fields to their default values (empty strings / zeros).
@@ -197,6 +202,7 @@ impl CanFrame {
         self.byte_length.clear();
         self.byte_length_value = 0;
         self.data.clear();
+        self.comment.clear();
     }
 }
 
@@ -219,6 +225,7 @@ mod tests {
             byte_length: "12".to_string(),
             byte_length_value: 12,
             data: "11 22 33 44 55 66 77 88 99 AA BB CC ".to_string(),
+            comment: "test comment".into()
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::{AbsoluteTime, CanFrame, MsgLog};
+use crate::{AbsoluteTime, CanFrame, SigLog};
 
 /// Aggregates CAN/CAN-FD frames parsed from a Vector ASCII trace (`.asc`) file.
 ///
@@ -72,8 +72,8 @@ pub struct CanLog {
     /// One frame per `(id, channel)` — the most recent by `timestamp_value`.
     pub last_id_chn_frame: Vec<CanFrame>,
 
-    // detailed CAN message list
-    pub msg_list: Vec<MsgLog>,
+    // detailed signal list
+    pub sig_list: Vec<SigLog>,
 }
 
 impl CanLog {
@@ -96,6 +96,6 @@ impl CanLog {
         self.absolute_time.clear();
         self.all_frame = Vec::default();
         self.last_id_chn_frame = Vec::default();
-        self.msg_list = Vec::default();
+        self.sig_list = Vec::default();
     }
 }
