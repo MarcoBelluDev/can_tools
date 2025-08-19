@@ -17,9 +17,9 @@ use crate::types::database::Database;
 
 pub fn parse_from_file(path: &str) -> Result<Vec<Database>, String> {
     if !path.ends_with(".arxml") {
-        return Err(format!("Not a valid .arxml file format"));
+        return Err("Not a valid .arxml file format".to_string());
     }
-    
+
     let file: File = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mut reader: Reader<BufReader<File>> = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
@@ -45,10 +45,9 @@ pub fn parse_from_file(path: &str) -> Result<Vec<Database>, String> {
                 match tag.as_str() {
                     "CAN-CLUSTER" => {
                         in_can_cluster = true;
-                        current_db = Some(Database {
-                            bustype: "CAN".to_string(),
-                            ..Default::default()
-                        });
+                        let mut _db = Database::default();
+                        _db.bustype = "CAN".to_string();
+                        current_db = Some(_db);
                     }
                     "ADMIN-DATA" if in_can_cluster => {
                         in_admin_data = true;
@@ -133,51 +132,51 @@ mod tests {
     fn test_parse_can_clusters() {
         // XML d'esempio con 2 CAN-CLUSTER e 1 ETHERNET-CLUSTER
         let xml = r#"
-        <AUTOSAR>
-            <AR-PACKAGES>
-                <AR-PACKAGE>
-                    <ELEMENTS>
-                        <CAN-CLUSTER>
-                            <SHORT-NAME>Cluster_CAN_1</SHORT-NAME>
-                            <ADMIN-DATA>
-                                <SDGS>
-                                    <SDG GID="ClusterVersion">
-                                        <SD GID="Version">V1.0.0</SD>
-                                    </SDG>
-                                </SDGS>
-                            </ADMIN-DATA>
-                            <CAN-CLUSTER-VARIANTS>
-                                <CAN-CLUSTER-CONDITIONAL>
-                                    <BAUDRATE>500000</BAUDRATE>
-                                    <CAN-FD-BAUDRATE>2000000</CAN-FD-BAUDRATE>
-                                </CAN-CLUSTER-CONDITIONAL>
-                            </CAN-CLUSTER-VARIANTS>
-                        </CAN-CLUSTER>
+ <AUTOSAR>
+ <AR-PACKAGES>
+ <AR-PACKAGE>
+ <ELEMENTS>
+ <CAN-CLUSTER>
+ <SHORT-NAME>Cluster_CAN_1</SHORT-NAME>
+ <ADMIN-DATA>
+ <SDGS>
+ <SDG GID="ClusterVersion">
+ <SD GID="Version">V1.0.0</SD>
+ </SDG>
+ </SDGS>
+ </ADMIN-DATA>
+ <CAN-CLUSTER-VARIANTS>
+ <CAN-CLUSTER-CONDITIONAL>
+ <BAUDRATE>500000</BAUDRATE>
+ <CAN-FD-BAUDRATE>2000000</CAN-FD-BAUDRATE>
+ </CAN-CLUSTER-CONDITIONAL>
+ </CAN-CLUSTER-VARIANTS>
+ </CAN-CLUSTER>
 
-                        <CAN-CLUSTER>
-                            <SHORT-NAME>Cluster_CAN_2</SHORT-NAME>
-                            <ADMIN-DATA>
-                                <SDGS>
-                                    <SDG GID="ClusterVersion">
-                                        <SD GID="Version">V2.3.4</SD>
-                                    </SDG>
-                                </SDGS>
-                            </ADMIN-DATA>
-                            <CAN-CLUSTER-VARIANTS>
-                                <CAN-CLUSTER-CONDITIONAL>
-                                    <BAUDRATE>250000</BAUDRATE>
-                                </CAN-CLUSTER-CONDITIONAL>
-                            </CAN-CLUSTER-VARIANTS>
-                        </CAN-CLUSTER>
+ <CAN-CLUSTER>
+ <SHORT-NAME>Cluster_CAN_2</SHORT-NAME>
+ <ADMIN-DATA>
+ <SDGS>
+ <SDG GID="ClusterVersion">
+ <SD GID="Version">V2.3.4</SD>
+ </SDG>
+ </SDGS>
+ </ADMIN-DATA>
+ <CAN-CLUSTER-VARIANTS>
+ <CAN-CLUSTER-CONDITIONAL>
+ <BAUDRATE>250000</BAUDRATE>
+ </CAN-CLUSTER-CONDITIONAL>
+ </CAN-CLUSTER-VARIANTS>
+ </CAN-CLUSTER>
 
-                        <ETHERNET-CLUSTER>
-                            <SHORT-NAME>Cluster_ETH</SHORT-NAME>
-                        </ETHERNET-CLUSTER>
-                    </ELEMENTS>
-                </AR-PACKAGE>
-            </AR-PACKAGES>
-        </AUTOSAR>
-        "#;
+ <ETHERNET-CLUSTER>
+ <SHORT-NAME>Cluster_ETH</SHORT-NAME>
+ </ETHERNET-CLUSTER>
+ </ELEMENTS>
+ </AR-PACKAGE>
+ </AR-PACKAGES>
+ </AUTOSAR>
+ "#;
 
         // Scriviamo il file XML temporaneo
         let mut path = temp_dir();

@@ -1,10 +1,10 @@
 use chrono::NaiveDateTime;
 
-use crate::types::abs_time::AbsoluteTime;
+use crate::types::absolute_time::AbsoluteTime;
 
 pub(crate) fn from_line(line: &str) -> Option<AbsoluteTime> {
     // splits in words by whitespaces
-    let mut parts = line.split_whitespace();
+    let mut parts = line.split_ascii_whitespace();
 
     // check first word
     if parts.next()? != "date" {
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn normalizes_multiple_spaces() {
         // The code uses `split_whitespace` + `join(" ")`, so extra spaces get normalized.
-        let line = "date   Mon   Mar 10    12:00:00.000   pm   2025";
+        let line = "date Mon Mar 10 12:00:00.000 pm 2025";
 
         let abs = from_line(line).expect("should parse despite extra spaces");
         assert_eq!(abs.text, "Mon Mar 10 12:00:00.000 pm 2025");

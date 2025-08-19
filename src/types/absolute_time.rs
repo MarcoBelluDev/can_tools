@@ -12,10 +12,10 @@ use chrono::NaiveDateTime;
 ///
 /// # Fields
 /// - `text`: The raw timestamp string **after** the leading `"date "`
-///   prefix (e.g., `"Tue Aug 05 07:23:45.123 pm 2025"`).
+/// prefix (e.g., `"Tue Aug 05 07:23:45.123 pm 2025"`).
 /// - `value`: The parsed timestamp as `Some(NaiveDateTime)` on success, or
-///   `None` if not available.
-/// 
+/// `None` if not available.
+///
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AbsoluteTime {
     pub text: String,

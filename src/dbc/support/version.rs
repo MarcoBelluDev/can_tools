@@ -1,6 +1,6 @@
 use crate::types::database::Database;
 
-pub(crate) fn fct(db: &mut Database, line: &str) {
+pub(crate) fn decode(db: &mut Database, line: &str) {
     // Example: VERSION "1.0"
     db.version = line
         .to_lowercase()
@@ -15,10 +15,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_fct() {
+    fn test_decode() {
         let mut db: Database = Database::default();
         // Example Line
-        fct(&mut db, r#"VERSION "1.0.2""#);
+        decode(&mut db, r#"VERSION "1.0.2""#);
         assert_eq!(db.version, "1.0.2");
     }
 }
