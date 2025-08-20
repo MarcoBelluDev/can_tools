@@ -21,7 +21,7 @@ use can_tools::{dbc, asc, CanLog, resolve_message_signals};
 
 fn main() -> Result<(), String> {
     // Load one or more DBCs and map them to channels
-    let db = dbc::parse_from_file("path/to/file.dbc")?;
+    let db = dbc::parse::from_file("path/to/file.dbc")?;
     let mut dbs = std::collections::HashMap::new();
     dbs.insert(1u8, db);
 
@@ -29,7 +29,7 @@ fn main() -> Result<(), String> {
     let mut log = CanLog::default();
     let mut last_by_id_ch = std::collections::HashMap::new();
     let mut chart_by_key = std::collections::HashMap::new();
-    asc::parse_from_file("path/to/file.asc", &mut log, &dbs, &mut last_by_id_ch, &mut chart_by_key)?;
+    asc::parse::from_file("path/to/file.asc", &mut log, &dbs, &mut last_by_id_ch, &mut chart_by_key)?;
 
     // Walk first frame
     let frame = &log.all_frame[0];
