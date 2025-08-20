@@ -18,11 +18,15 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
             }
         }
     } else if line.contains(r#""BusType""#) {
-        let mut parts = line.trim_end_matches(';').splitn(3, ' ');
-        parts.next(); // BA_
-        parts.next(); // BusType
-        if let Some(text) = parts.next() {
-            db.bustype = text.trim_matches('"').to_string();
+        // Expected: BA_ "BusType" "CAN FD";
+        let s: &str = line.trim_end_matches(';').trim();
+
+        // After split by '"': [unquoted, "BusType", unquoted, "CAN FD", ...]
+        let mut quoted = s.split('"').skip(1).step_by(2);
+        if let (Some(key), Some(val)) = (quoted.next(), quoted.next()) {
+            if key.eq_ignore_ascii_case("BusType") {
+                db.bustype = val.to_string(); // "CAN" or "CAN FD"
+            }
         }
     } else if line.contains(r#""DBName""#) {
         let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
@@ -34,11 +38,22 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     } else if line.contains(r#""BaudrateCANFD""#) {
         let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
         parts.next(); // BA_
-        parts.next(); // Baudrate
+        parts.next(); // BaudrateCANFD
         if let Some(text) = parts.next() {
             if let Ok(baudrate_canfd) = text.parse::<u32>() {
                 db.baudrate_canfd = baudrate_canfd;
             }
+        }
+    }
+}
+
+pub(crate) fn comment(db: &mut Database, line: &str) {
+    // Expected formats:
+    // CM_ "Comment regarding the network";
+    let s: &str = line.trim_end_matches(';');
+    if let Some((_, rest)) = s.split_once('"') {
+        if let Some((inner, _)) = rest.rsplit_once('"') {
+            db.comment = inner.to_string(); // quotes removed
         }
     }
 }

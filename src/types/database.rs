@@ -1,75 +1,77 @@
 //! DBC data model.
 //!
-//! Questo modulo definisce i tipi “DB-side” usati per rappresentare un database CAN
-//! (file `.dbc` o `.arxml`) una volta parsato. I tipi qui descritti sono pensati per:
-//! - Navigare messaggi, segnali e nodi (ECU);
-//! - Effettuare ricerche veloci tramite lookup normalizzati;
-//! - Fornire utilità per l’estrazione/decodifica del valore grezzo di un segnale
-//!   a partire da un payload di byte.
+//! This module defines the “DB-side” types used to represent a CAN database
+//! (`.dbc` or `.arxml` file) once parsed. The types here are designed to:
+//! - Navigate messages, signals, and nodes (ECUs);
+//! - Perform fast lookups via normalized keys;
+//! - Provide utilities to extract/decode a signal’s raw value
+//!   starting from a byte payload.
 
 use std::collections::HashMap;
 
 use crate::types::canlog::SignalLog;
 
-// --- Typed indices (semplici wrapper; si possono evolvere in newtype robusti in futuro) ---
+// --- Typed indices (simple wrappers; can be evolved into robust newtypes later) ---
 
-/// Identificatore indicizzato di un nodo (ECU) all’interno di `Database.nodes`.
+/// Indexed identifier of a node (ECU) within `Database.nodes`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub struct NodeId(pub usize);
 
-/// Identificatore indicizzato di un messaggio all’interno di `Database.messages`.
+/// Indexed identifier of a message within `Database.messages`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub struct MessageId(pub usize);
 
-/// Identificatore indicizzato di un segnale all’interno di `Database.signals`.
+/// Indexed identifier of a signal within `Database.signals`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub struct SignalId(pub usize);
 
-/// Rappresentazione in memoria di un database CAN (DBC/ARXML).
+/// In-memory representation of a CAN database (DBC/ARXML).
 ///
-/// Contiene metadati (nome, tipo bus, baudrate, versione), gli elenchi di nodi/messaggi/segnali
-/// e alcuni dizionari di lookup normalizzati per ricerche efficienti.
+/// Holds metadata (name, bus type, baud rates, version), the lists of nodes/messages/signals,
+/// and several normalized lookup maps for efficient queries.
 ///
-/// ### Lookup interni
-/// - `msg_by_id`: ricerca per CAN ID numerico (`u64`);
-/// - `msg_by_hex`: ricerca per CAN ID in forma esadecimale normalizzata (`"0x..."`, maiuscolo);
-/// - `msg_by_name`: ricerca per nome messaggio **case-insensitive** (chiave in minuscolo);
-/// - `node_by_name`: ricerca per nome nodo **case-insensitive** (chiave in minuscolo).
+/// ### Internal lookups
+/// - `msg_by_id`: lookup by numeric CAN ID (`u64`);
+/// - `msg_by_hex`: lookup by normalized hexadecimal CAN ID (`"0x..."`, uppercase);
+/// - `msg_by_name`: lookup by message name, **case-insensitive** (lowercase key);
+/// - `node_by_name`: lookup by node name, **case-insensitive** (lowercase key).
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct Database {
-    // --- Informazioni generali ---
-    /// Nome logico del database (se disponibile).
+    // --- General information ---
+    /// Logical name of the database (if available).
     pub name: String,
-    /// Tipo di bus (es. `"CAN"`).
+    /// Bus type (e.g., `"CAN"`).
     pub bustype: String,
-    /// Baudrate classico (bit/s). `0` se non specificato.
+    /// Classic baud rate (bit/s). `0` if unspecified.
     pub baudrate: u32,
-    /// Baudrate CAN FD (bit/s). `0` se non specificato.
+    /// CAN FD baud rate (bit/s). `0` if unspecified.
     pub baudrate_canfd: u32,
-    /// Stringa di versione del database.
+    /// Database version string.
     pub version: String,
+    /// Database comment.
+    pub comment: String,
 
-    // --- Storage principale (liste indicizzate) ---
-    /// Elenco dei nodi/ECU presenti.
+    // --- Main storage (indexed lists) ---
+    /// List of nodes/ECUs present in the database.
     pub nodes: Vec<NodeDB>,
-    /// Elenco dei messaggi definiti.
+    /// List of defined messages.
     pub messages: Vec<MessageDB>,
-    /// Elenco dei segnali definiti.
+    /// List of defined signals.
     pub signals: Vec<SignalDB>,
 
-    // --- Lookup interni (chiavi normalizzate) ---
+    // --- Internal lookups (normalized keys) ---
     msg_by_id: HashMap<u64, MessageId>,
-    msg_by_hex: HashMap<String, MessageId>,  // esadecimale normalizzato “0x…”, maiuscolo
-    msg_by_name: HashMap<String, MessageId>, // nome messaggio in minuscolo
-    node_by_name: HashMap<String, NodeId>,   // nome nodo in minuscolo
+    msg_by_hex: HashMap<String, MessageId>,  // normalized hexadecimal “0x...”, uppercase
+    msg_by_name: HashMap<String, MessageId>, // message name in lowercase
+    node_by_name: HashMap<String, NodeId>,   // node name in lowercase
 }
 
 impl Database {
-    // ---- Adders: mantengono le relazioni e gli indici coerenti ----
+    // ---- Adders: keep relationships and indices consistent ----
 
-    /// Aggiunge un nodo al database e restituisce il relativo `NodeId`.
+    /// Adds a node to the database and returns the corresponding `NodeId`.
     ///
-    /// Aggiorna automaticamente il lookup `node_by_name` (case-insensitive).
+    /// Automatically updates the `node_by_name` (case-insensitive) lookup.
     pub fn add_node(&mut self, node: NodeDB) -> NodeId {
         let id: NodeId = NodeId(self.nodes.len());
         let key: String = node.name.to_lowercase();
@@ -78,25 +80,25 @@ impl Database {
         id
     }
 
-    /// Aggiunge un messaggio e ne indicizza id/nome.
+    /// Adds a message and indexes its id/name.
     ///
-    /// Aggiorna:
-    /// - `msg_by_id` con l’ID numerico;
-    /// - `msg_by_hex` con l’ID esadecimale **normalizzato**;
-    /// - `msg_by_name` con il nome in minuscolo.
+    /// Updates:
+    /// - `msg_by_id` with the numeric ID;
+    /// - `msg_by_hex` with the **normalized** hexadecimal ID;
+    /// - `msg_by_name` with the lowercase name.
     ///
-    /// In più, registra il messaggio tra i `messages_sent` di ciascun nodo trasmittente.
+    /// Additionally, registers the message within `messages_sent` of each sender node.
     pub fn add_message(&mut self, mut msg: MessageDB) -> MessageId {
         let id: MessageId = MessageId(self.messages.len());
 
-        // normalizza e indicizza id/nome
+        // normalize and index id/name
         let hex: String = normalize_id_hex(&msg.id_hex);
         msg.id_hex = hex.clone();
         self.msg_by_id.insert(msg.id, id);
         self.msg_by_hex.insert(hex, id);
         self.msg_by_name.insert(msg.name.to_lowercase(), id);
 
-        // back-reference: dai nodi mittenti al messaggio
+        // back-reference: from sender nodes to the message
         for &nid in &msg.sender_nodes {
             if let Some(node) = self.nodes.get_mut(nid.0) {
                 node.messages_sent.push(id);
@@ -107,11 +109,11 @@ impl Database {
         id
     }
 
-    /// Aggiunge un segnale e lo collega al messaggio padre (`MessageDB.signals`).
+    /// Adds a signal and links it to its parent message (`MessageDB.signals`).
     pub fn add_signal(&mut self, sig: SignalDB) -> SignalId {
         let id: SignalId = SignalId(self.signals.len());
 
-        // collega il segnale al suo messaggio
+        // attach the signal to its message
         let midx: MessageId = sig.message;
         if let Some(msg) = self.messages.get_mut(midx.0) {
             msg.signals.push(id);
@@ -121,7 +123,7 @@ impl Database {
         id
     }
 
-    /// Ripulisce completamente il database (metadati, liste e lookup).
+    /// Completely clears the database (metadata, lists, and lookups).
     pub fn clear(&mut self) {
         self.name.clear();
         self.bustype.clear();
@@ -140,12 +142,12 @@ impl Database {
 
     // ---- Public accessors ----
 
-    /// Restituisce un `&MessageDB` dato il CAN ID numerico.
+    /// Returns a `&MessageDB` given the numeric CAN ID.
     pub fn get_message_by_id(&self, id: u64) -> Option<&MessageDB> {
         self.msg_by_id.get(&id).map(|&mid| &self.messages[mid.0])
     }
 
-    /// Restituisce un `&mut MessageDB` dato il CAN ID numerico.
+    /// Returns a `&mut MessageDB` given the numeric CAN ID.
     pub fn get_message_by_id_mut(&mut self, id: u64) -> Option<&mut MessageDB> {
         if let Some(&mid) = self.msg_by_id.get(&id) {
             self.messages.get_mut(mid.0)
@@ -154,16 +156,16 @@ impl Database {
         }
     }
 
-    /// Restituisce un `&MessageDB` dato l’ID esadecimale (case-insensitive).
+    /// Returns a `&MessageDB` given a hexadecimal ID (case-insensitive).
     ///
-    /// L’argomento può essere in forme varie, ad es. `"12dd54e3"`, `"0x12dd54e3"`, `"12DD54E3x"`;
-    /// sarà normalizzato internamente a `"0x12DD54E3"`.
+    /// The argument may come in various forms, e.g., `"12dd54e3"`, `"0x12dd54e3"`, `"12DD54E3x"`;
+    /// it will be normalized internally to `"0x12DD54E3"`.
     pub fn get_message_by_id_hex(&self, id_hex: &str) -> Option<&MessageDB> {
         let key: String = normalize_id_hex(id_hex);
         self.msg_by_hex.get(&key).map(|&mid| &self.messages[mid.0])
     }
 
-    /// Restituisce un `&mut MessageDB` dato l’ID esadecimale (case-insensitive).
+    /// Returns a `&mut MessageDB` given a hexadecimal ID (case-insensitive).
     pub fn get_message_by_id_hex_mut(&mut self, id_hex: &str) -> Option<&mut MessageDB> {
         let key: String = normalize_id_hex(id_hex);
         if let Some(&mid) = self.msg_by_hex.get(&key) {
@@ -173,14 +175,14 @@ impl Database {
         }
     }
 
-    /// Restituisce un `&MessageDB` dato il nome (case-insensitive).
+    /// Returns a `&MessageDB` given the name (case-insensitive).
     pub fn get_message_by_name(&self, name: &str) -> Option<&MessageDB> {
         self.msg_by_name
             .get(&name.to_lowercase())
             .map(|&mid| &self.messages[mid.0])
     }
 
-    /// Restituisce un `&mut MessageDB` dato il nome (case-insensitive).
+    /// Returns a `&mut MessageDB` given the name (case-insensitive).
     pub fn get_message_by_name_mut(&mut self, name: &str) -> Option<&mut MessageDB> {
         if let Some(&mid) = self.msg_by_name.get(&name.to_lowercase()) {
             self.messages.get_mut(mid.0)
@@ -189,20 +191,20 @@ impl Database {
         }
     }
 
-    /// Restituisce un `&NodeDB` dato il nome (case-insensitive).
+    /// Returns a `&NodeDB` given the name (case-insensitive).
     ///
-    /// _Nota_: il nome del metodo è al plurale per ragioni di retrocompatibilità,
-    /// ma restituisce un singolo nodo se presente.
+    /// _Note_: the method name is plural for backward compatibility,
+    /// but it returns a single node if present.
     pub fn get_nodes_by_name(&self, name: &str) -> Option<&NodeDB> {
         self.node_by_name
             .get(&name.to_lowercase())
             .map(|&nid| &self.nodes[nid.0])
     }
 
-    /// Restituisce un `&mut NodeDB` dato il nome (case-insensitive).
+    /// Returns a `&mut NodeDB` given the name (case-insensitive).
     ///
-    /// _Nota_: il nome del metodo è al plurale per ragioni di retrocompatibilità,
-    /// ma restituisce un singolo nodo se presente.
+    /// _Note_: the method name is plural for backward compatibility,
+    /// but it returns a single node if present.
     pub fn get_nodes_by_name_mut(&mut self, name: &str) -> Option<&mut NodeDB> {
         if let Some(&nid) = self.node_by_name.get(&name.to_lowercase()) {
             self.nodes.get_mut(nid.0)
@@ -211,41 +213,41 @@ impl Database {
         }
     }
 
-    /// Restituisce l’`NodeId` di un nodo dato il nome (case-insensitive).
+    /// Returns the `NodeId` of a node by name (case-insensitive).
     pub fn get_node_id_by_name(&self, name: &str) -> Option<NodeId> {
         self.node_by_name.get(&name.to_lowercase()).copied()
     }
 }
 
-/// Messaggio CAN definito nel database (DBC/ARXML).
+/// CAN message defined in the database (DBC/ARXML).
 ///
-/// Mantiene l’ID numerico (`id`), l’ID in esadecimale normalizzato (`id_hex`),
-/// il `name`, la lunghezza del payload (`byte_length`) e metadati come `msgtype`, `cycle_time`,
-/// i nodi trasmittenti (`sender_nodes`) e la lista dei segnali (`signals`) che lo compongono.
+/// Maintains the numeric ID (`id`), the normalized hexadecimal ID (`id_hex`),
+/// the `name`, payload length (`byte_length`), and metadata such as `msgtype`, `cycle_time`,
+/// the transmitting nodes (`sender_nodes`), and the list of composing signals (`signals`).
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct MessageDB {
-    /// CAN ID numerico (base 10).
+    /// Numeric CAN ID (base 10).
     pub id: u64,
-    /// CAN ID esadecimale **normalizzato** (`"0x..."`, maiuscolo).
+    /// **Normalized** hexadecimal CAN ID (`"0x..."`, uppercase).
     pub id_hex: String,
-    /// Nome del messaggio.
+    /// Message name.
     pub name: String,
-    /// Lunghezza payload in byte.
+    /// Payload length in bytes.
     pub byte_length: u16,
-    /// Tipo messaggio (campo libero; se presente nel DBC).
+    /// Message type (free-form; if present in the DBC).
     pub msgtype: String,
-    /// Tempo di ciclo in millisecondi (se definito; 0 se non noto).
+    /// Cycle time in milliseconds (if defined; 0 if unknown).
     pub cycle_time: u16,
-    /// Nodi (ECU) mittenti per questo messaggio.
+    /// Transmitting nodes (ECUs) for this message.
     pub sender_nodes: Vec<NodeId>,
-    /// Segnali che appartengono a questo messaggio.
+    /// Signals that belong to this message.
     pub signals: Vec<SignalId>,
-    /// Commento associato (sezione `CM_ BO_` nel DBC).
+    /// Associated comment (DBC `CM_ BO_` section).
     pub comment: String,
 }
 
 impl MessageDB {
-    /// Reimposta tutti i campi ai valori di default.
+    /// Resets all fields to their default values.
     pub fn clear(&mut self) {
         self.id = 0;
         self.id_hex.clear();
@@ -258,9 +260,9 @@ impl MessageDB {
         self.comment.clear();
     }
 
-    /// Iteratore di comodo sui `SignalDB` appartenenti a questo messaggio.
+    /// Convenience iterator over the `SignalDB`s belonging to this message.
     ///
-    /// Esempio:
+    /// Example:
     /// ```
     /// # use can_tools::types::database::{Database, MessageDB, SignalDB, MessageId, NodeDB};
     /// # let db = Database::default();
@@ -274,59 +276,59 @@ impl MessageDB {
     }
 }
 
-/// Step elementare per l’estrazione di un campo di bit da un payload.
+/// Elementary step for extracting a bit field from a payload.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Step {
-    /// Indice del byte sorgente.
+    /// Source byte index.
     pub(crate) byte_index: u8,
-    /// LSB all’interno del byte sorgente (0..7).
+    /// LSB within the source byte (0..7).
     pub(crate) src_lsb: u8,
-    /// Numero di bit da prelevare (1..8).
+    /// Number of bits to take (1..8).
     pub(crate) width: u8,
-    /// LSB di destinazione nel valore finale (LSB-first).
+    /// Destination LSB in the final value (LSB-first).
     pub(crate) dst_lsb: u16,
 }
 
-/// Definizione di un segnale all’interno di un messaggio CAN (DBC).
+/// Definition of a signal within a CAN message (DBC).
 ///
-/// Descrive posizione/bit-length, endianness, segno, scalatura (factor/offset),
-/// range valido, unità di misura, tabelle di valori e nodi riceventi.
+/// Describes position/bit-length, endianness, sign, scaling (factor/offset),
+/// valid range, unit of measure, value tables, and receiver nodes.
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct SignalDB {
-    /// Messaggio padre (indice in `Database.messages`).
+    /// Parent message (index in `Database.messages`).
     pub message: MessageId,
-    /// Nome del segnale.
+    /// Signal name.
     pub name: String,
-    /// Bit start nel payload (bit 0 = LSB del primo byte).
+    /// Bit start in the payload (bit 0 = LSB of the first byte).
     pub bit_start: u16,
-    /// Lunghezza in bit.
+    /// Bit length.
     pub bit_length: u16,
     /// Endianness: `1` = little-endian (Intel), `0` = big-endian (Motorola).
     pub endian: u8,
-    /// Segno: `1` = signed, `0` = unsigned.
+    /// Sign: `1` = signed, `0` = unsigned.
     pub sign: u8,
-    /// Fattore di scalatura.
+    /// Scaling factor.
     pub factor: f64,
-    /// Offset di scalatura.
+    /// Scaling offset.
     pub offset: f64,
-    /// Valore minimo fisico.
+    /// Minimum physical value.
     pub min: f64,
-    /// Valore massimo fisico.
+    /// Maximum physical value.
     pub max: f64,
-    /// Unità di misura (normalizzata altrove rimuovendo l’eventuale prefisso `"Unit_"`).
+    /// Unit of measure (normalized elsewhere by removing the optional `"Unit_"` prefix).
     pub unit_of_measurement: String,
-    /// Nodi riceventi.
+    /// Receiver nodes.
     pub receiver_nodes: Vec<NodeId>,
-    /// Commento associato (sezione `CM_ SG_` nel DBC).
+    /// Associated comment (DBC `CM_ SG_` section).
     pub comment: String,
-    /// Tabella di mapping valore→testo (value table).
+    /// Value-to-text mapping (value table).
     pub value_table: HashMap<i32, String>,
-    /// Sequenza di step precalcolati per l’estrazione veloce.
+    /// Precomputed extraction steps for fast decoding.
     pub(crate) steps: Vec<Step>,
 }
 
 impl SignalDB {
-    /// Restituisce un riferimento immutabile a un nodo ricevente dato il nome (case-insensitive).
+    /// Returns an immutable reference to a receiver node by name (case-insensitive).
     pub fn get_receiver_nodes_by_name<'a>(
         &self,
         db: &'a Database,
@@ -339,7 +341,7 @@ impl SignalDB {
             .find(|node| node.name.to_lowercase() == key)
     }
 
-    /// Restituisce un riferimento mutabile a un nodo ricevente dato il nome (case-insensitive).
+    /// Returns a mutable reference to a receiver node by name (case-insensitive).
     pub fn get_receiver_nodes_by_name_mut<'a>(
         &self,
         db: &'a mut Database,
@@ -355,7 +357,7 @@ impl SignalDB {
         db.nodes.get_mut(nid.0)
     }
 
-    /// Precalcola gli step di estrazione bit → valore per accelerare la decodifica.
+    /// Precomputes bit → value extraction steps to speed up decoding.
     pub fn compile_inline(&mut self) {
         if !self.steps.is_empty() {
             return;
@@ -378,7 +380,7 @@ impl SignalDB {
         self.steps.push(st);
     }
 
-    /// Compilazione degli step per segnali little-endian (Intel).
+    /// Step compilation for little-endian (Intel) signals.
     fn compile_intel(&mut self) {
         let mut remaining: u16 = self.bit_length;
         let mut bit: u16 = self.bit_start;
@@ -403,9 +405,9 @@ impl SignalDB {
         }
     }
 
-    /// Compilazione degli step per segnali big-endian (Motorola).
+    /// Step compilation for big-endian (Motorola) signals.
     fn compile_motorola(&mut self) {
-        // In DBC, @0: il bit di start è l’MSB del segnale; si avanza MSB-first.
+        // In DBC, @0: the start bit is the MSB of the signal; we advance MSB-first.
         let mut remaining: u16 = self.bit_length;
         let mut byte: usize = (self.bit_start / 8) as usize;
         let mut bit_msb: u8 = 7 - (self.bit_start % 8) as u8;
@@ -432,7 +434,7 @@ impl SignalDB {
         }
     }
 
-    /// Estrae il valore grezzo **unsigned** (accumulo LSB-first) dal payload.
+    /// Extracts the **unsigned** raw value (LSB-first accumulation) from the payload.
     #[inline]
     pub fn extract_raw_u64(&self, bytes: &[u8]) -> u64 {
         let mut out: u64 = 0;
@@ -450,7 +452,7 @@ impl SignalDB {
         out
     }
 
-    /// Estrae il valore grezzo **signed** dal payload eseguendo sign-extension se necessario.
+    /// Extracts the **signed** raw value from the payload, performing sign extension if needed.
     #[inline]
     pub fn extract_raw_i64(&self, bytes: &[u8]) -> i64 {
         let raw_u: u64 = self.extract_raw_u64(bytes);
@@ -468,9 +470,9 @@ impl SignalDB {
         }
     }
 
-    /// Converte un valore grezzo in un `SignalLog` “istantaneo” con valore fisico, testo e metadati.
+    /// Converts a raw value into an “instantaneous” `SignalLog` with physical value, text, and metadata.
     ///
-    /// *Nota*: l’unità viene normalizzata rimuovendo un eventuale prefisso `"Unit_"`.
+    /// *Note*: the unit is normalized by removing an optional `"Unit_"` prefix.
     #[inline]
     pub fn to_sigframe(&self, raw_i: i64) -> SignalLog {
         let value: f64 = (raw_i as f64) * self.factor + self.offset;
@@ -500,19 +502,19 @@ impl SignalDB {
     }
 }
 
-/// Nodo/ECU definito nel database.
+/// Node/ECU defined in the database.
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct NodeDB {
-    /// Nome del nodo/ECU.
+    /// Node/ECU name.
     pub name: String,
-    /// Commento associato (se presente).
+    /// Associated comment (if present).
     pub comment: String,
-    /// Messaggi trasmessi da questo nodo.
+    /// Messages transmitted by this node.
     pub messages_sent: Vec<MessageId>,
 }
 
 impl NodeDB {
-    /// Ripulisce tutti i campi ai valori di default.
+    /// Resets all fields to their default values.
     pub fn clear(&mut self) {
         self.name.clear();
         self.comment.clear();
@@ -522,10 +524,10 @@ impl NodeDB {
 
 // --- helpers ---
 
-/// Normalizza una stringa di ID esadecimale.
+/// Normalizes a hexadecimal ID string.
 ///
-/// Converte varianti come `"12DD54E3x"`, `"0x12dd54e3"`, `"12dd54e3"`
-/// nella forma canonica `"0x12DD54E3"`.
+/// Converts variants such as `"12DD54E3x"`, `"0x12dd54e3"`, `"12dd54e3"`
+/// into the canonical form `"0x12DD54E3"`.
 fn normalize_id_hex(s: &str) -> String {
     let t: &str = s.trim();
     let t: &str = t

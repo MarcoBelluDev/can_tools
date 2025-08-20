@@ -107,6 +107,10 @@ pub fn from_file(path: &str) -> Result<Database, String> {
             if line.split_ascii_whitespace().count() >= 2 {
                 support::messages::tx_nodes(&mut db, line); // ok
             }
+        } else if line.to_lowercase().starts_with(r#""cm_ """#) {
+            if line.split_ascii_whitespace().count() >= 1 {
+                support::basic_info::comment(&mut db, line);
+            }
         } else if line.to_lowercase().starts_with("cm_ bo_") {
             if line.split_ascii_whitespace().count() >= 2 {
                 support::messages::comments(&mut db, line);

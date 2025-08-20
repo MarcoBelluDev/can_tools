@@ -32,7 +32,7 @@
 //! asc::parse::from_file("path/to/file.asc", &dbs)?;
 //!
 //! // Read first frame
-//! let frame: &CanFrame = &log.all_frame[0];
+//! let frame: &CanFrame = &log.can_frames[0];
 //! let msg = &log.messages[frame.message];
 //! println!("id={} name={} len={}", msg.id, msg.name, msg.byte_length);
 //!
