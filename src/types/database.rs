@@ -59,6 +59,40 @@ pub struct Database {
     /// List of defined signals.
     pub signals: Vec<SignalDB>,
 
+    // other info
+    pub nm_type: String,
+    pub manufacturer: String,
+    pub nmh_message_count: u8,
+    pub nmh_base_address: u32,
+    pub nmh_n_start: u16,
+    pub nmh_long_timer: u16,
+    pub nmh_prepare_bus_sleep_timer: u16,
+    pub nmh_wait_bus_sleep_timer: u16,
+    pub nmh_timeout_timer: u16,
+    pub nmh_nbt_max: u8,
+    pub nmh_nbt_min: u8,
+    pub sync_jump_width_max: u8,
+    pub sync_jump_width_min: u8,
+    pub sample_point_max: u8,
+    pub sample_point_min: u8,
+    pub version_number: u8,
+    pub version_year: u8,
+    pub version_week: u8,
+    pub version_month: u8,
+    pub version_day: u8,
+    pub vagtp20_setup_start_address: u8,
+    pub vagtp20_setup_message_count: u8,
+    pub gen_nwm_talk_nm: String,
+    pub gen_nwm_sleep_time: u16,
+    pub gen_nwm_goto_mode_bus_sleep: String,
+    pub gen_nwm_goto_mode_awake: String,
+    pub gen_nwm_ap_can_wake_up: String,
+    pub gen_nwm_ap_can_sleep: String,
+    pub gen_nwm_ap_can_on: String,
+    pub gen_nwm_ap_can_off: String,
+    pub gen_nwm_ap_can_normal: String,
+    pub gen_nwm_ap_bus_sleep: String,
+
     // --- Internal lookups (normalized keys) ---
     msg_by_id: HashMap<u64, MessageId>,
     msg_by_hex: HashMap<String, MessageId>,  // normalized hexadecimal “0x...”, uppercase
@@ -130,6 +164,40 @@ impl Database {
         self.baudrate = 0;
         self.baudrate_canfd = 0;
         self.version.clear();
+        self.comment.clear();
+
+        self.nm_type.clear();
+        self.manufacturer.clear();
+        self.nmh_message_count = 0;
+        self.nmh_base_address = 0;
+        self.nmh_n_start = 0;
+        self.nmh_long_timer = 0;
+        self.nmh_prepare_bus_sleep_timer = 0;
+        self.nmh_wait_bus_sleep_timer = 0;
+        self.nmh_timeout_timer = 0;
+        self.nmh_nbt_max = 0;
+        self.nmh_nbt_min = 0;
+        self.sync_jump_width_max = 0;
+        self.sync_jump_width_min = 0;
+        self.sample_point_max = 0;
+        self.sample_point_min = 0;
+        self.version_number = 0;
+        self.version_year = 0;
+        self.version_week = 0;
+        self.version_month = 0;
+        self.version_day = 0;
+        self.vagtp20_setup_start_address = 0;
+        self.vagtp20_setup_message_count = 0;
+        self.gen_nwm_talk_nm.clear();
+        self.gen_nwm_sleep_time = 0;
+        self.gen_nwm_goto_mode_bus_sleep.clear();
+        self.gen_nwm_goto_mode_awake.clear();
+        self.gen_nwm_ap_can_wake_up.clear();
+        self.gen_nwm_ap_can_sleep.clear();
+        self.gen_nwm_ap_can_on.clear();
+        self.gen_nwm_ap_can_off.clear();
+        self.gen_nwm_ap_can_normal.clear();
+        self.gen_nwm_ap_bus_sleep.clear();
 
         self.nodes.clear();
         self.messages.clear();

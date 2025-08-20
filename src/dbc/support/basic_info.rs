@@ -44,6 +44,272 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
                 db.baudrate_canfd = baudrate_canfd;
             }
         }
+    } else if line.contains(r#""NmhNStart""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhNStart
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u16>() {
+                db.nmh_n_start = number;
+            }
+        }
+    } else if line.contains(r#""NmhLongTimer""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhLongTimer
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u16>() {
+                db.nmh_long_timer = number;
+            }
+        }
+    } else if line.contains(r#""NmhPrepareBusSleepTimer""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhPrepareBusSleepTimer
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u16>() {
+                db.nmh_prepare_bus_sleep_timer = number;
+            }
+        }
+    } else if line.contains(r#""NmhWaitBusSleepTimer""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhWaitBusSleepTimer
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u16>() {
+                db.nmh_wait_bus_sleep_timer = number;
+            }
+        }
+    } else if line.contains(r#""NmhTimeoutTimer""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhTimeoutTimer
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u16>() {
+                db.nmh_timeout_timer = number;
+            }
+        }
+    } else if line.contains(r#""NBTMax""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NBTMax
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.nmh_nbt_max = number;
+            }
+        }
+    } else if line.contains(r#""NBTMin""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NBTMin
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.nmh_nbt_min = number;
+            }
+        }
+    } else if line.contains(r#""SyncJumpWidthMax""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // SyncJumpWidthMax
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.sync_jump_width_max = number;
+            }
+        }
+    } else if line.contains(r#""SyncJumpWidthMin""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // SyncJumpWidthMin
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.sync_jump_width_min = number;
+            }
+        }
+    } else if line.contains(r#""SamplePointMax""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // SamplePointMax
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.sample_point_max = number;
+            }
+        }
+    } else if line.contains(r#""SamplePointMin""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // SamplePointMin
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.sample_point_min = number;
+            }
+        }
+    } else if line.contains(r#""VersionNumber""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // VersionNumber
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.version_number = number;
+            }
+        }
+    } else if line.contains(r#""VersionYear""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // VersionYear
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.version_year = number;
+            }
+        }
+    } else if line.contains(r#""VersionWeek""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // VersionWeek
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.version_week = number;
+            }
+        }
+    } else if line.contains(r#""VersionMonth""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // VersionMonth
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.version_month = number;
+            }
+        }
+    } else if line.contains(r#""VersionDay""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // VersionDay
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.version_day = number;
+            }
+        }
+    } else if line.contains(r#""VAGTP20_SetupStartAddress""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // VAGTP20_SetupStartAddress
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.vagtp20_setup_start_address = number;
+            }
+        }
+    } else if line.contains(r#""VAGTP20_SetupMessageCount""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // VAGTP20_SetupMessageCount
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.vagtp20_setup_message_count = number;
+            }
+        }
+    } else if line.contains(r#""NmType""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmType
+        if let Some(text) = parts.next() {
+            db.nm_type = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""NmhMessageCount""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhMessageCount
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u8>() {
+                db.nmh_message_count = number;
+            }
+        }
+    } else if line.contains(r#""NmhBaseAddress""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhBaseAddress
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u32>() {
+                db.nmh_base_address = number;
+            }
+        }
+    } else if line.contains(r#""Manufacturer""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // Manufacturer
+        if let Some(text) = parts.next() {
+            db.manufacturer = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMTalkNM""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMTalkNM
+        if let Some(text) = parts.next() {
+            db.gen_nwm_talk_nm = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMSleepTime""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // NmhBaseAddress
+        if let Some(text) = parts.next() {
+            if let Ok(number) = text.parse::<u16>() {
+                db.gen_nwm_sleep_time = number;
+            }
+        }
+    } else if line.contains(r#""GenNWMGotoMode_BusSleep""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMGotoMode_BusSleep
+        if let Some(text) = parts.next() {
+            db.gen_nwm_goto_mode_bus_sleep = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMGotoMode_Awake""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMGotoMode_Awake
+        if let Some(text) = parts.next() {
+            db.gen_nwm_goto_mode_awake = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMApCanWakeUp""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMApCanWakeUp
+        if let Some(text) = parts.next() {
+            db.gen_nwm_ap_can_wake_up = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMApCanSleep""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMApCanSleep
+        if let Some(text) = parts.next() {
+            db.gen_nwm_ap_can_sleep = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMApCanOn""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMApCanOn
+        if let Some(text) = parts.next() {
+            db.gen_nwm_ap_can_on = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMApCanOff""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMApCanOff
+        if let Some(text) = parts.next() {
+            db.gen_nwm_ap_can_off = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMApCanNormal""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMApCanNormal
+        if let Some(text) = parts.next() {
+            db.gen_nwm_ap_can_normal = text.trim_matches('"').to_string();
+        }
+    } else if line.contains(r#""GenNWMApBusSleep""#) {
+        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
+        parts.next(); // BA_
+        parts.next(); // GenNWMApBusSleep
+        if let Some(text) = parts.next() {
+            db.gen_nwm_ap_bus_sleep = text.trim_matches('"').to_string();
+        }
     }
 }
 
