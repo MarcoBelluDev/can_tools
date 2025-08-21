@@ -80,69 +80,73 @@ pub fn from_file(path: &str) -> Result<Database, String> {
     let mut db: Database = Database::default();
     let mut i: usize = 0;
 
-    while i < lines.len() {
-        let line: &str = lines[i].trim();
+    
+while i < lines.len() {
+        // Work on a trimmed-start slice to preserve inner spaces
+        let s: &str = lines[i].trim_start();
 
         // skip comments and empty lines
-        if line.is_empty() || line.starts_with("//") {
+        if s.is_empty() || s.starts_with("//") {
             i += 1;
             continue;
         }
 
-        if line.to_lowercase().starts_with("version") {
-            support::version::decode(&mut db, line);
-        } else if line.to_lowercase().starts_with("ba_ ") {
-            support::basic_info::decode(&mut db, line);
-        } else if line.to_lowercase().starts_with("bu_") {
-            support::nodes::decode(&mut db, line);
-        } else if line.to_lowercase().starts_with("bo_ ") {
-            if line.split_ascii_whitespace().count() >= 4 {
-                support::messages::decode(&mut db, line);
+        // Extract first token (keyword) without allocating
+        let mut it = s.split_ascii_whitespace();
+        let tok = it.next().unwrap_or("");
+
+        if tok.eq_ignore_ascii_case("VERSION") {
+            support::version::decode(&mut db, s);
+
+        } else if tok.eq_ignore_ascii_case("BA_") {
+            // Handle both database-level attributes and message cycle time here.
+            support::basic_info::decode(&mut db, s);
+            support::messages::cycle_time(&mut db, s);
+
+        } else if tok.eq_ignore_ascii_case("BU_") {
+            support::nodes::decode(&mut db, s);
+
+        } else if tok.eq_ignore_ascii_case("BO_") {
+            support::messages::decode(&mut db, s);
+
+        } else if tok.eq_ignore_ascii_case("SG_") {
+            support::signals::decode(&mut db, s);
+
+        } else if tok.eq_ignore_ascii_case("BO_TX_BU_") {
+            support::messages::tx_nodes(&mut db, s);
+
+        } else if tok.eq_ignore_ascii_case("CM_") {
+            // Second token determines target: "…", BO_, SG_, BU_
+            let second = it.next().unwrap_or("");
+            if second.starts_with('"') {
+                // Network/global comment: CM_ "…";
+                support::basic_info::comment(&mut db, s);
+            } else if second.eq_ignore_ascii_case("BO_") {
+                support::messages::comments(&mut db, s);
+            } else if second.eq_ignore_ascii_case("SG_") {
+                // Accumulate multiline until at least two quotes (very common in DBC)
+                let mut full_comment_line: String = s.to_string();
+                while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
+                    i += 1;
+                    full_comment_line.push('\n');
+                    full_comment_line.push_str(lines[i].trim());
+                }
+                support::signals::comments(&mut db, &full_comment_line);
+            } else if second.eq_ignore_ascii_case("BU_") {
+                let mut full_comment_line: String = s.to_string();
+                while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
+                    i += 1;
+                    full_comment_line.push('\n');
+                    full_comment_line.push_str(lines[i].trim());
+                }
+                support::nodes::comments(&mut db, &full_comment_line);
             }
-        } else if line.to_lowercase().starts_with("sg_") {
-            if line.split_ascii_whitespace().count() >= 5 {
-                support::signals::decode(&mut db, line);
-            }
-        } else if line.to_lowercase().starts_with("bo_tx_bu_") {
-            if line.split_ascii_whitespace().count() >= 2 {
-                support::messages::tx_nodes(&mut db, line); // ok
-            }
-        } else if line.to_lowercase().starts_with(r#"cm_ ""#) {
-            if line.split_ascii_whitespace().count() >= 1 {
-                support::basic_info::comment(&mut db, line);
-            }
-        } else if line.to_lowercase().starts_with("cm_ bo_") {
-            if line.split_ascii_whitespace().count() >= 2 {
-                support::messages::comments(&mut db, line);
-            }
-        } else if line.to_lowercase().starts_with("cm_ sg_") {
-            let mut full_comment_line: String = line.to_string();
-            while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
-                i += 1;
-                full_comment_line.push('\n');
-                full_comment_line.push_str(lines[i].trim());
-            }
-            support::signals::comments(&mut db, line);
-        } else if line.to_lowercase().starts_with("cm_ bu_") {
-            let mut full_comment_line: String = line.to_string();
-            while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
-                i += 1;
-                full_comment_line.push('\n');
-                full_comment_line.push_str(lines[i].trim());
-            }
-            support::nodes::comments(&mut db, line);
-        } else if line.to_lowercase().starts_with(r#""ba_ "genmsgcycletime""#)
-            && line.split_ascii_whitespace().count() >= 3
-        {
-            support::messages::cycle_time(&mut db, line);
-        } else if line.to_lowercase().starts_with("val_")
-            && line.split_ascii_whitespace().count() >= 3
-        {
-            support::signals::value_table(&mut db, line);
+
+        } else if tok.eq_ignore_ascii_case("VAL_") {
+            support::signals::value_table(&mut db, s);
         }
 
         i += 1;
     }
-
-    Ok(db)
+Ok(db)
 }

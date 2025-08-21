@@ -1,4 +1,4 @@
-use crate::types::database::{Database, NodeDB, SignalDB};
+use crate::types::database::{Database, NodeId, SignalDB};
 use std::collections::HashMap;
 
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
@@ -111,20 +111,15 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     };
 
     // 5) receivers (space-separated)
-    let mut receiver_nodes: Vec<crate::types::database::NodeId> = Vec::new();
-    for r in it {
-        let name = r.trim_end_matches(','); // receivers can be comma-separated
-        if name.is_empty() {
-            continue;
-        }
+    let mut receiver_nodes: Vec<NodeId> = Vec::new();
+
+    // Spezza anche i token contenenti virgole
+    for name in it
+        .flat_map(|chunk| chunk.split(','))                  // <- split su virgola dentro al token
+        .map(|s| s.trim().trim_matches(|c| c == ',' || c == ';')) // pulisci virgole/; residui
+        .filter(|s| !s.is_empty())
+    {
         if let Some(nid) = db.get_node_id_by_name(name) {
-            receiver_nodes.push(nid);
-        } else {
-            let nid = db.add_node(NodeDB {
-                name: name.to_string(),
-                comment: String::new(),
-                messages_sent: Vec::new(),
-            });
             receiver_nodes.push(nid);
         }
     }
