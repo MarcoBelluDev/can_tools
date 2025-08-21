@@ -1,4 +1,4 @@
-use crate::types::database::{Database, MessageDB, NodeDB, NodeId};
+use crate::types::database::{Database, NodeKey};
 
 const CAN_SFF_MASK: u64 = 0x7FF; // 11-bit
 const CAN_EFF_MASK: u64 = 0x1FFF_FFFF; // 29-bit
@@ -41,44 +41,9 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     let byte_length: u16 = it.next().and_then(|t| t.parse::<u16>().ok()).unwrap_or(0);
     let sender_name: &str = it.next().unwrap_or("").trim_end_matches(';');
 
-    let id_hex = id_to_hex(id);
+    let id_hex: String = id_to_hex(id);
 
-    // Ensure the sender node exists (if present)
-    let sender_node_id: Option<NodeId> = if !sender_name.is_empty() {
-        if let Some(nid) = db.get_node_id_by_name(sender_name) {
-            Some(nid)
-        } else {
-            Some(db.add_node(NodeDB {
-                name: sender_name.to_string(),
-                comment: String::new(),
-                messages_sent: Vec::new(),
-            }))
-        }
-    } else {
-        None
-    };
-
-    let mut msg: MessageDB = MessageDB {
-        id,
-        id_hex,
-        name,
-        byte_length,
-        msgtype: if byte_length <= 8 {
-            "CAN".into()
-        } else {
-            "CAN FD".into()
-        },
-        cycle_time: 0,
-        sender_nodes: Vec::new(),
-        signals: Vec::new(),
-        comment: String::new(),
-    };
-
-    if let Some(nid) = sender_node_id {
-        msg.sender_nodes.push(nid);
-    }
-
-    db.add_message(msg);
+    db.add_message_if_absent(&name, id, &id_hex, byte_length, sender_name);
 }
 
 /// Parse `BO_TX_BU_` lines assigning transmit-capable nodes to a message.
@@ -111,28 +76,24 @@ pub(crate) fn tx_nodes(db: &mut Database, line: &str) {
     let nodes_part = nodes_part.trim().trim_end_matches(';');
 
     // Resolve/create NodeIds first (no &mut msg held)
-    let mut node_ids: Vec<NodeId> = Vec::new();
-    for token in nodes_part.split(|c| c == ',' || c == ' ') {
+    let mut node_rif: Vec<NodeKey> = Vec::new();
+    for token in nodes_part.split([',', ' ']) {
         let name = token.trim();
         if name.is_empty() {
             continue;
         }
-        if let Some(nid) = db.get_node_id_by_name(name) {
-            node_ids.push(nid);
+        if let Some(rif) = db.get_node_key_by_name(name) {
+            node_rif.push(rif);
         } else {
-            node_ids.push(db.add_node(NodeDB {
-                name: name.to_string(),
-                comment: String::new(),
-                messages_sent: Vec::new(),
-            }));
+            node_rif.push(db.add_node_if_absent(name));
         }
     }
 
     // Now update the message
     if let Some(msg) = db.get_message_by_id_mut(id) {
-        for nid in node_ids {
-            if !msg.sender_nodes.iter().any(|&x| x == nid) {
-                msg.sender_nodes.push(nid);
+        for rif in node_rif {
+            if !msg.sender_nodes.contains(&rif) {
+                msg.sender_nodes.push(rif);
             }
         }
     }

@@ -104,8 +104,8 @@ pub(crate) fn parse(
     if let Some(dbc) = db_list.get(&channel) {
         if let Some(msg) = dbc.get_message_by_id_hex(&canonicalize_id(&id)) {
             name = msg.name.clone();
-            if let Some(&nid) = msg.sender_nodes.first() {
-                if let Some(node) = dbc.nodes.get(nid.0) {
+            if let Some(&node_rif) = msg.sender_nodes.first() {
+                if let Some(node) = dbc.get_node_by_key(node_rif) {
                     sender_node = node.name.clone();
                 }
             }
@@ -115,43 +115,44 @@ pub(crate) fn parse(
             let payload_bytes: Vec<u8> = parse_hex_bytes(&data);
 
             msg_signal_indices.reserve(msg.signals.len());
-            for &sid in &msg.signals {
-                let s = &dbc.signals[sid.0];
-                let raw: i64 = s.extract_raw_i64(&payload_bytes);
-                let sigf: SignalLog = s.to_sigframe(raw);
+            for &sig_key in &msg.signals {
+                if let Some(s) = dbc.get_sig_by_key(sig_key) {
+                    let raw: i64 = s.extract_raw_i64(&payload_bytes);
+                    let sigf: SignalLog = s.to_sigframe(raw);
 
-                // Append a point to the corresponding SignalLog time series
-                let t: f32 = timestamp;
-                let key: String = build_sig_key(channel, &id, &s.name);
-                let idx = *chart_by_key.entry(key.clone()).or_insert_with(|| {
-                    let i = log.signals.len();
-                    let unit_norm = s
-                        .unit_of_measurement
-                        .strip_prefix("Unit_")
-                        .unwrap_or(&s.unit_of_measurement)
-                        .to_string();
-                    log.signals.push(SignalLog {
-                        message: 0, // set below
-                        name: s.name.clone(),
-                        factor: s.factor,
-                        offset: s.offset,
-                        channel,
-                        raw: sigf.raw,
-                        value: sigf.value,
-                        unit: unit_norm,
-                        text: sigf.text.clone(),
-                        comment: s.comment.clone(),
-                        value_table: s.value_table.clone(),
-                        values: Vec::new(),
+                    // Append a point to the corresponding SignalLog time series
+                    let t: f32 = timestamp;
+                    let key: String = build_sig_key(channel, &id, &s.name);
+                    let idx = *chart_by_key.entry(key.clone()).or_insert_with(|| {
+                        let i = log.signals.len();
+                        let unit_norm = s
+                            .unit_of_measurement
+                            .strip_prefix("Unit_")
+                            .unwrap_or(&s.unit_of_measurement)
+                            .to_string();
+                        log.signals.push(SignalLog {
+                            message: 0, // set below
+                            name: s.name.clone(),
+                            factor: s.factor,
+                            offset: s.offset,
+                            channel,
+                            raw: sigf.raw,
+                            value: sigf.value,
+                            unit: unit_norm,
+                            text: sigf.text.clone(),
+                            comment: s.comment.clone(),
+                            value_table: s.value_table.clone(),
+                            values: Vec::new(),
+                        });
+                        i
                     });
-                    i
-                });
-                log.signals[idx].raw = sigf.raw;
-                log.signals[idx].value = sigf.value;
-                log.signals[idx].text = sigf.text.clone();
-                log.signals[idx].values.push([t.into(), sigf.value]);
+                    log.signals[idx].raw = sigf.raw;
+                    log.signals[idx].value = sigf.value;
+                    log.signals[idx].text = sigf.text.clone();
+                    log.signals[idx].values.push([t.into(), sigf.value]);
 
-                msg_signal_indices.push(idx);
+                    msg_signal_indices.push(idx);
+                }
             }
         }
     }

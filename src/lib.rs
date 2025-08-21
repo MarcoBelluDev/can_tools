@@ -104,7 +104,6 @@
 //! ## License
 //! Licensed under the MIT License.
 
-
 pub mod arxml;
 pub mod asc;
 pub mod dbc;

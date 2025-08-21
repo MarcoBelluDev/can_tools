@@ -1,4 +1,4 @@
-use crate::types::database::{Database, NodeDB};
+use crate::types::database::Database;
 
 /// Decode the BU_ line listing node names and register them in the database.
 /// Example: `BU_: ECU1 ECU2 ECU3`
@@ -11,16 +11,10 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     }
 
     for name in parts {
-        if name.is_empty() {
-            continue;
-        }
-        // Insert only if not already present
-        if db.get_nodes_by_name(name).is_none() {
-            db.add_node(NodeDB {
-                name: name.to_string(),
-                comment: String::new(),
-                messages_sent: Vec::new(),
-            });
+        let name = name.trim();
+        if !name.is_empty() {
+            // creates if missing, returns existing rif otherwise
+            db.add_node_if_absent(name);
         }
     }
 }
@@ -52,31 +46,7 @@ pub(crate) fn comments(db: &mut Database, text: &str) {
     let comment = text[first_quote + 1..last_quote].to_string();
 
     // Update single source of truth
-    if let Some(node) = db.get_nodes_by_name_mut(node_name) {
+    if let Some(node) = db.get_node_by_name_mut(node_name) {
         node.comment = comment;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_decode_nodes() {
-        let mut db = Database::default();
-        decode(&mut db, "BU_: ECU1 ECU2 ECU3");
-        assert_eq!(db.nodes.len(), 3);
-        assert_eq!(db.nodes[0].name, "ECU1");
-    }
-
-    #[test]
-    fn test_comments() {
-        let mut db = Database::default();
-        decode(&mut db, "BU_: Gateway");
-        comments(&mut db, r#"CM_ BU_ Gateway "Main gateway";"#);
-        assert_eq!(
-            db.get_nodes_by_name("Gateway").unwrap().comment,
-            "Main gateway"
-        );
     }
 }

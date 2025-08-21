@@ -1,41 +1,28 @@
 //! DBC data model.
 //!
-//! This module defines the “DB-side” types used to represent a CAN database
+//! This module defines the "DB-side" types used to represent a CAN database
 //! (`.dbc` or `.arxml` file) once parsed. The types here are designed to:
 //! - Navigate messages, signals, and nodes (ECUs);
 //! - Perform fast lookups via normalized keys;
-//! - Provide utilities to extract/decode a signal’s raw value
+//! - Provide utilities to extract/decode a signal's raw value
 //!   starting from a byte payload.
 
 use std::collections::HashMap;
+use slotmap::{SlotMap, new_key_type};
 
 use crate::types::canlog::SignalLog;
 
-// --- Typed indices (simple wrappers; can be evolved into robust newtypes later) ---
-
-/// Indexed identifier of a node (ECU) within `Database.nodes`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
-pub struct NodeId(pub usize);
-
-/// Indexed identifier of a message within `Database.messages`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
-pub struct MessageId(pub usize);
-
-/// Indexed identifier of a signal within `Database.signals`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
-pub struct SignalId(pub usize);
+// --- Stable keys (SlotMap) ---
+new_key_type! { pub struct NodeKey; }
+new_key_type! { pub struct MessageKey; }
+new_key_type! { pub struct SignalKey; }
 
 /// In-memory representation of a CAN database (DBC/ARXML).
 ///
-/// Holds metadata (name, bus type, baud rates, version), the lists of nodes/messages/signals,
-/// and several normalized lookup maps for efficient queries.
-///
-/// ### Internal lookups
-/// - `msg_by_id`: lookup by numeric CAN ID (`u64`);
-/// - `msg_by_hex`: lookup by normalized hexadecimal CAN ID (`"0x..."`, uppercase);
-/// - `msg_by_name`: lookup by message name, **case-insensitive** (lowercase key);
-/// - `node_by_name`: lookup by node name, **case-insensitive** (lowercase key).
-#[derive(Default, Clone, PartialEq, Debug)]
+/// Holds metadata (name, bus type, baud rates, version), the arenas of nodes/messages/signals
+/// (SlotMaps with stable keys), optional order vectors to control iteration order, and
+/// several normalized lookup maps for efficient queries.
+#[derive(Default, Clone, Debug)]
 pub struct Database {
     // --- General information ---
     /// Logical name of the database (if available).
@@ -51,15 +38,17 @@ pub struct Database {
     /// Database comment.
     pub comment: String,
 
-    // --- Main storage (indexed lists) ---
-    /// List of nodes/ECUs present in the database.
-    pub nodes: Vec<NodeDB>,
-    /// List of defined messages.
-    pub messages: Vec<MessageDB>,
-    /// List of defined signals.
-    pub signals: Vec<SignalDB>,
+    // --- Main storage (stable-key arenas) ---
+    pub nodes: SlotMap<NodeKey, NodeDB>,
+    pub messages: SlotMap<MessageKey, MessageDB>,
+    pub signals: SlotMap<SignalKey, SignalDB>,
 
-    // other info
+    // --- Order "views" (you can reorder these without touching the arenas) ---
+    pub nodes_order: Vec<NodeKey>,
+    pub messages_order: Vec<MessageKey>,
+    pub signals_order: Vec<SignalKey>,
+
+    // --- Misc info (left as-is from your model) ---
     pub nm_type: String,
     pub manufacturer: String,
     pub nmh_message_count: u8,
@@ -93,135 +82,223 @@ pub struct Database {
     pub gen_nwm_ap_can_normal: String,
     pub gen_nwm_ap_bus_sleep: String,
 
-    // --- Internal lookups (normalized keys) ---
-    msg_by_id: HashMap<u64, MessageId>,
-    msg_by_hex: HashMap<String, MessageId>,  // normalized hexadecimal “0x...”, uppercase
-    msg_by_name: HashMap<String, MessageId>, // message name in lowercase
-    node_by_name: HashMap<String, NodeId>,   // node name in lowercase
+    // --- Lookups (case-normalized) ---
+    pub(crate) node_key_by_name: HashMap<String, NodeKey>,   // lower(name) → NodeKey
+    pub(crate) msg_key_by_id:   HashMap<u64, MessageKey>,    // id10 → MessageKey
+    pub(crate) msg_key_by_hex:  HashMap<String, MessageKey>, // "0x...." uppercase → MessageKey
+    pub(crate) msg_key_by_name: HashMap<String, MessageKey>, // lower(name) → MessageKey
+
+    // Global map for signals by (lower) name. Beware of collisions if two BO_ have same SG_ name.
+    pub(crate) sig_key_by_name: HashMap<String, SignalKey>,
+
+    // Parsing state: last message seen (used by SG_ decoder)
+    pub(crate) current_msg: Option<MessageKey>,
 }
 
 impl Database {
-    // ---- Adders: keep relationships and indices consistent ----
+    // ---- First time adders from DB, not for customer ----
 
-    /// Adds a node to the database and returns the corresponding `NodeId`.
-    ///
-    /// Automatically updates the `node_by_name` (case-insensitive) lookup.
-    pub fn add_node(&mut self, node: NodeDB) -> NodeId {
-        let id: NodeId = NodeId(self.nodes.len());
-        let key: String = node.name.to_lowercase();
-        self.nodes.push(node);
-        self.node_by_name.insert(key, id);
-        id
+    /// Adds a node to the database if not already present and returns the corresponding `NodeKey`.
+    pub(crate) fn add_node_if_absent(&mut self, name: &str) -> NodeKey {
+        if let Some(r) = self.get_node_key_by_name(name) {
+            return r;
+        }
+        let key = self.nodes.insert(NodeDB {
+            name: name.to_string(),
+            comment: String::new(),
+            messages_sent: Vec::new(),
+        });
+        self.nodes_order.push(key);
+        self.node_key_by_name.insert(name.to_lowercase(), key);
+        key
     }
 
-    /// Adds a message and indexes its id/name.
-    ///
-    /// Updates:
-    /// - `msg_by_id` with the numeric ID;
-    /// - `msg_by_hex` with the **normalized** hexadecimal ID;
-    /// - `msg_by_name` with the lowercase name.
-    ///
-    /// Additionally, registers the message within `messages_sent` of each sender node.
-    pub fn add_message(&mut self, mut msg: MessageDB) -> MessageId {
-        let id: MessageId = MessageId(self.messages.len());
+    /// Adds a message and indexes its id/name. Also sets `current_msg` for subsequent SG_ lines.
+    pub(crate) fn add_message_if_absent(
+        &mut self,
+        name: &str,
+        id: u64,
+        id_hex: &str,
+        byte_length: u16,
+        sender_name: &str,
+    ) -> MessageKey {
+        if let Some(r) = self.get_msg_key_by_name(name) {
+            self.current_msg = Some(r);
+            return r;
+        }
 
-        // normalize and index id/name
-        let hex: String = normalize_id_hex(&msg.id_hex);
-        msg.id_hex = hex.clone();
-        self.msg_by_id.insert(msg.id, id);
-        self.msg_by_hex.insert(hex, id);
-        self.msg_by_name.insert(msg.name.to_lowercase(), id);
+        let sender_node_id = if !sender_name.is_empty() {
+            Some(self.add_node_if_absent(sender_name))
+        } else {
+            None
+        };
 
-        // back-reference: from sender nodes to the message
-        for &nid in &msg.sender_nodes {
-            if let Some(node) = self.nodes.get_mut(nid.0) {
-                node.messages_sent.push(id);
+        let norm_id_hex: String = normalize_id_hex(id_hex);
+
+        let msg_key = self.messages.insert(MessageDB {
+            id,
+            id_hex: norm_id_hex.clone(),
+            name: name.to_string(),
+            byte_length,
+            msgtype: if byte_length <= 8 { "CAN".into() } else { "CAN FD".into() },
+            cycle_time: 0,
+            sender_nodes: sender_node_id.into_iter().collect(),
+            signals: Vec::new(),
+            comment: String::new(),
+        });
+
+        self.messages_order.push(msg_key);
+
+        self.msg_key_by_id.insert(id, msg_key);
+        self.msg_key_by_hex.insert(norm_id_hex, msg_key);
+        self.msg_key_by_name.insert(name.to_lowercase(), msg_key);
+
+        if let Some(nid) = sender_node_id {
+            if let Some(n) = self.nodes.get_mut(nid) {
+                n.messages_sent.push(msg_key);
             }
         }
 
-        self.messages.push(msg);
-        id
+        self.current_msg = Some(msg_key);
+        msg_key
     }
 
-    /// Adds a signal and links it to its parent message (`MessageDB.signals`).
-    pub fn add_signal(&mut self, sig: SignalDB) -> SignalId {
-        let id: SignalId = SignalId(self.signals.len());
-
-        // attach the signal to its message
-        let midx: MessageId = sig.message;
-        if let Some(msg) = self.messages.get_mut(midx.0) {
-            msg.signals.push(id);
+    /// Adds a signal to the database if not already present and returns the corresponding `SignalKey`.
+    pub(crate) fn add_signal_if_absent(
+        &mut self,
+        name: &str,
+        bit_start: u16,
+        bit_length: u16,
+        endian: u8,
+        sign: u8,
+        factor: f64,
+        offset: f64,
+        min: f64,
+        max: f64,
+        unit: &str,
+        receiver_nodes: Vec<NodeKey>,
+    ) -> SignalKey {
+        if let Some(r) = self.get_sig_key_by_name(name) {
+            return r;
         }
 
-        self.signals.push(sig);
-        id
+        let msg_key = match self.current_msg {
+            Some(k) => k,
+            None => {
+                // Create a fallback message if an SG_ appears before any BO_ (rare).
+                self.add_message_if_absent("__UNBOUND__", 0, "0x0", 8, "")
+            }
+        };
+
+        let mut sig = SignalDB {
+            message: msg_key,
+            name: name.to_string(),
+            bit_start,
+            bit_length,
+            endian,
+            sign,
+            factor,
+            offset,
+            min,
+            max,
+            unit_of_measurement: unit.to_string(),
+            receiver_nodes,
+            comment: String::new(),
+            value_table: HashMap::new(),
+            steps: Vec::new(),
+        };
+        sig.compile_inline();
+
+        let sig_key = self.signals.insert(sig);
+        self.signals_order.push(sig_key);
+
+        if let Some(m) = self.messages.get_mut(msg_key) {
+            if !m.signals.contains(&sig_key) {
+                m.signals.push(sig_key);
+            }
+        }
+
+        self.sig_key_by_name.insert(name.to_lowercase(), sig_key);
+        sig_key
     }
 
-    /// Completely clears the database (metadata, lists, and lookups).
-    pub fn clear(&mut self) {
-        self.name.clear();
-        self.bustype.clear();
-        self.baudrate = 0;
-        self.baudrate_canfd = 0;
-        self.version.clear();
-        self.comment.clear();
+    // ---- Getter, not for customer, based on Keys ----
 
-        self.nm_type.clear();
-        self.manufacturer.clear();
-        self.nmh_message_count = 0;
-        self.nmh_base_address = 0;
-        self.nmh_n_start = 0;
-        self.nmh_long_timer = 0;
-        self.nmh_prepare_bus_sleep_timer = 0;
-        self.nmh_wait_bus_sleep_timer = 0;
-        self.nmh_timeout_timer = 0;
-        self.nmh_nbt_max = 0;
-        self.nmh_nbt_min = 0;
-        self.sync_jump_width_max = 0;
-        self.sync_jump_width_min = 0;
-        self.sample_point_max = 0;
-        self.sample_point_min = 0;
-        self.version_number = 0;
-        self.version_year = 0;
-        self.version_week = 0;
-        self.version_month = 0;
-        self.version_day = 0;
-        self.vagtp20_setup_start_address = 0;
-        self.vagtp20_setup_message_count = 0;
-        self.gen_nwm_talk_nm.clear();
-        self.gen_nwm_sleep_time = 0;
-        self.gen_nwm_goto_mode_bus_sleep.clear();
-        self.gen_nwm_goto_mode_awake.clear();
-        self.gen_nwm_ap_can_wake_up.clear();
-        self.gen_nwm_ap_can_sleep.clear();
-        self.gen_nwm_ap_can_on.clear();
-        self.gen_nwm_ap_can_off.clear();
-        self.gen_nwm_ap_can_normal.clear();
-        self.gen_nwm_ap_bus_sleep.clear();
-
-        self.nodes.clear();
-        self.messages.clear();
-        self.signals.clear();
-        self.msg_by_id.clear();
-        self.msg_by_hex.clear();
-        self.msg_by_name.clear();
-        self.node_by_name.clear();
+    // --------- Nodes --------
+    pub(crate) fn get_node_key_by_name(&self, name: &str) -> Option<NodeKey> {
+        self.node_key_by_name.get(&name.to_lowercase()).copied()
     }
 
-    // ---- Public accessors ----
+    pub(crate) fn get_node_by_key(&self, key: NodeKey) -> Option<&NodeDB> {
+        self.nodes.get(key)
+    }
+
+    pub(crate) fn get_node_by_key_mut(&mut self, key: NodeKey) -> Option<&mut NodeDB> {
+        self.nodes.get_mut(key)
+    }
+
+    // --------- Messages --------
+    pub(crate) fn get_msg_key_by_name(&self, name: &str) -> Option<MessageKey> {
+        self.msg_key_by_name.get(&name.to_lowercase()).copied()
+    }
+
+    pub(crate) fn get_msg_key_by_id(&self, id: &u64) -> Option<MessageKey> {
+        self.msg_key_by_id.get(id).copied()
+    }
+
+    pub(crate) fn get_msg_key_by_id_hex(&self, id_hex: &str) -> Option<MessageKey> {
+        let key: String = normalize_id_hex(id_hex); // "0x...UPPERCASE"
+        self.msg_key_by_hex.get(&key).copied()
+    }
+
+    pub(crate) fn get_message_by_key(&self, key: MessageKey) -> Option<&MessageDB> {
+        self.messages.get(key)
+    }
+
+    pub(crate) fn get_message_by_key_mut(&mut self, key: MessageKey) -> Option<&mut MessageDB> {
+        self.messages.get_mut(key)
+    }
+
+    // --------- Signals --------
+    pub(crate) fn get_sig_key_by_name(&self, name: &str) -> Option<SignalKey> {
+        self.sig_key_by_name.get(&name.to_lowercase()).copied()
+    }
+
+    pub(crate) fn get_sig_by_key(&self, key: SignalKey) -> Option<&SignalDB> {
+        self.signals.get(key)
+    }
+
+    pub(crate) fn get_sig_by_key_mut(&mut self, key: SignalKey) -> Option<&mut SignalDB> {
+        self.signals.get_mut(key)
+    }
+
+    // ---- Public getters ----
+    // --------- Nodes --------
+
+    /// Returns a `&NodeDB` given the name (case-insensitive).
+    pub fn get_node_by_name(&self, name: &str) -> Option<&NodeDB> {
+        let key: NodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
+        self.get_node_by_key(key)
+    }
+
+    /// Returns a `&mut NodeDB` given the name (case-insensitive).
+    pub fn get_node_by_name_mut(&mut self, name: &str) -> Option<&mut NodeDB> {
+        let key: NodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
+        self.get_node_by_key_mut(key)
+    }
+
+    // --------- Messages --------
 
     /// Returns a `&MessageDB` given the numeric CAN ID.
     pub fn get_message_by_id(&self, id: u64) -> Option<&MessageDB> {
-        self.msg_by_id.get(&id).map(|&mid| &self.messages[mid.0])
+        let key: MessageKey = self.get_msg_key_by_id(&id)?;
+        self.get_message_by_key(key)
     }
 
     /// Returns a `&mut MessageDB` given the numeric CAN ID.
     pub fn get_message_by_id_mut(&mut self, id: u64) -> Option<&mut MessageDB> {
-        if let Some(&mid) = self.msg_by_id.get(&id) {
-            self.messages.get_mut(mid.0)
-        } else {
-            None
-        }
+        let key: MessageKey = self.get_msg_key_by_id(&id)?;
+        self.get_message_by_key_mut(key)
     }
 
     /// Returns a `&MessageDB` given a hexadecimal ID (case-insensitive).
@@ -229,61 +306,73 @@ impl Database {
     /// The argument may come in various forms, e.g., `"12dd54e3"`, `"0x12dd54e3"`, `"12DD54E3x"`;
     /// it will be normalized internally to `"0x12DD54E3"`.
     pub fn get_message_by_id_hex(&self, id_hex: &str) -> Option<&MessageDB> {
-        let key: String = normalize_id_hex(id_hex);
-        self.msg_by_hex.get(&key).map(|&mid| &self.messages[mid.0])
+        let key: MessageKey = self.get_msg_key_by_id_hex(id_hex)?;
+        self.get_message_by_key(key)
     }
 
     /// Returns a `&mut MessageDB` given a hexadecimal ID (case-insensitive).
     pub fn get_message_by_id_hex_mut(&mut self, id_hex: &str) -> Option<&mut MessageDB> {
-        let key: String = normalize_id_hex(id_hex);
-        if let Some(&mid) = self.msg_by_hex.get(&key) {
-            self.messages.get_mut(mid.0)
-        } else {
-            None
-        }
+        let key: MessageKey = self.get_msg_key_by_id_hex(id_hex)?;
+        self.get_message_by_key_mut(key)
     }
 
     /// Returns a `&MessageDB` given the name (case-insensitive).
     pub fn get_message_by_name(&self, name: &str) -> Option<&MessageDB> {
-        self.msg_by_name
-            .get(&name.to_lowercase())
-            .map(|&mid| &self.messages[mid.0])
+        let key: MessageKey = self.get_msg_key_by_name(name)?;
+        self.get_message_by_key(key)
     }
 
     /// Returns a `&mut MessageDB` given the name (case-insensitive).
     pub fn get_message_by_name_mut(&mut self, name: &str) -> Option<&mut MessageDB> {
-        if let Some(&mid) = self.msg_by_name.get(&name.to_lowercase()) {
-            self.messages.get_mut(mid.0)
-        } else {
-            None
-        }
+        let key: MessageKey = self.get_msg_key_by_name(name)?;
+        self.get_message_by_key_mut(key)
     }
 
-    /// Returns a `&NodeDB` given the name (case-insensitive).
-    ///
-    /// _Note_: the method name is plural for backward compatibility,
-    /// but it returns a single node if present.
-    pub fn get_nodes_by_name(&self, name: &str) -> Option<&NodeDB> {
-        self.node_by_name
-            .get(&name.to_lowercase())
-            .map(|&nid| &self.nodes[nid.0])
+    // --------- Signals --------
+
+    /// Returns a `&SignalDB` given the name (case-insensitive).
+    pub fn get_signal_by_name(&self, name: &str) -> Option<&SignalDB> {
+        let key: SignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
+        self.get_sig_by_key(key)
     }
 
-    /// Returns a `&mut NodeDB` given the name (case-insensitive).
-    ///
-    /// _Note_: the method name is plural for backward compatibility,
-    /// but it returns a single node if present.
-    pub fn get_nodes_by_name_mut(&mut self, name: &str) -> Option<&mut NodeDB> {
-        if let Some(&nid) = self.node_by_name.get(&name.to_lowercase()) {
-            self.nodes.get_mut(nid.0)
-        } else {
-            None
-        }
+    /// Returns a `&mut SignalDB` given the name (case-insensitive).
+    pub fn get_signal_by_name_mut(&mut self, name: &str) -> Option<&mut SignalDB> {
+        let key: SignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
+        self.get_sig_by_key_mut(key)
     }
 
-    /// Returns the `NodeId` of a node by name (case-insensitive).
-    pub fn get_node_id_by_name(&self, name: &str) -> Option<NodeId> {
-        self.node_by_name.get(&name.to_lowercase()).copied()
+    /// Iterators according to the orders (defualt order is name based)
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &NodeDB> + '_ {
+        self.nodes_order.iter().filter_map(|&k| self.nodes.get(k))
+    }
+    pub fn iter_messages(&self) -> impl Iterator<Item = &MessageDB> + '_ {
+        self.messages_order.iter().filter_map(|&k| self.messages.get(k))
+    }
+    pub fn iter_signals(&self) -> impl Iterator<Item = &SignalDB> + '_ {
+        self.signals_order.iter().filter_map(|&k| self.signals.get(k))
+    }
+
+    /// Sort nodes_by_name
+    pub fn sort_nodes_by_name(&mut self) {
+        self.nodes_order.sort_by_key(|&k| self.nodes.get(k).map(|n| n.name.to_ascii_lowercase()));
+    }
+
+    /// Sort messages_by_name case insensitive
+    pub fn sort_messages_by_name(&mut self) {
+        self.messages_order
+            .sort_by_key(|&k| self.messages.get(k).map(|m| m.name.to_ascii_lowercase()));
+    }
+
+    /// Sort signals_by_name case insensitive
+    pub fn sort_signals_by_name(&mut self) {
+        self.signals_order
+            .sort_by_key(|&k| self.signals.get(k).map(|s| s.name.to_ascii_lowercase()));
+    }
+
+    /// Clear the database
+    pub fn clear(&mut self) {
+        *self = Database::default();
     }
 }
 
@@ -307,9 +396,9 @@ pub struct MessageDB {
     /// Cycle time in milliseconds (if defined; 0 if unknown).
     pub cycle_time: u16,
     /// Transmitting nodes (ECUs) for this message.
-    pub sender_nodes: Vec<NodeId>,
+    pub sender_nodes: Vec<NodeKey>,
     /// Signals that belong to this message.
-    pub signals: Vec<SignalId>,
+    pub signals: Vec<SignalKey>,
     /// Associated comment (DBC `CM_ BO_` section).
     pub comment: String,
 }
@@ -329,18 +418,8 @@ impl MessageDB {
     }
 
     /// Convenience iterator over the `SignalDB`s belonging to this message.
-    ///
-    /// Example:
-    /// ```
-    /// # use can_tools::types::database::{Database, MessageDB, SignalDB, MessageId, NodeDB};
-    /// # let db = Database::default();
-    /// # let msg = MessageDB::default();
-    /// # let _ = msg.signals(&db).count();
-    /// ```
     pub fn signals<'a>(&'a self, db: &'a Database) -> impl Iterator<Item = &'a SignalDB> + 'a {
-        self.signals
-            .iter()
-            .filter_map(move |&sid| db.signals.get(sid.0))
+        self.signals.iter().filter_map(move |&key| db.get_sig_by_key(key))
     }
 }
 
@@ -363,8 +442,8 @@ pub(crate) struct Step {
 /// valid range, unit of measure, value tables, and receiver nodes.
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct SignalDB {
-    /// Parent message (index in `Database.messages`).
-    pub message: MessageId,
+    /// Parent message key.
+    pub message: MessageKey,
     /// Signal name.
     pub name: String,
     /// Bit start in the payload (bit 0 = LSB of the first byte).
@@ -386,7 +465,7 @@ pub struct SignalDB {
     /// Unit of measure (normalized elsewhere by removing the optional `"Unit_"` prefix).
     pub unit_of_measurement: String,
     /// Receiver nodes.
-    pub receiver_nodes: Vec<NodeId>,
+    pub receiver_nodes: Vec<NodeKey>,
     /// Associated comment (DBC `CM_ SG_` section).
     pub comment: String,
     /// Value-to-text mapping (value table).
@@ -402,10 +481,10 @@ impl SignalDB {
         db: &'a Database,
         name: &str,
     ) -> Option<&'a NodeDB> {
-        let key: String = name.to_lowercase();
+        let key = name.to_lowercase();
         self.receiver_nodes
             .iter()
-            .filter_map(|&nid| db.nodes.get(nid.0))
+            .filter_map(|&node_key| db.get_node_by_key(node_key))
             .find(|node| node.name.to_lowercase() == key)
     }
 
@@ -415,14 +494,13 @@ impl SignalDB {
         db: &'a mut Database,
         name: &str,
     ) -> Option<&'a mut NodeDB> {
-        let key: String = name.to_lowercase();
-        let nid = self.receiver_nodes.iter().copied().find(|&nid| {
-            db.nodes
-                .get(nid.0)
-                .map(|n| n.name.to_lowercase() == key)
+        let input_name: String = name.to_lowercase();
+        let nkey = self.receiver_nodes.iter().copied().find(|&node_key| {
+            db.get_node_by_key(node_key)
+                .map(|n| n.name.to_lowercase() == input_name)
                 .unwrap_or(false)
         })?;
-        db.nodes.get_mut(nid.0)
+        db.get_node_by_key_mut(nkey)
     }
 
     /// Precomputes bit → value extraction steps to speed up decoding.
@@ -538,7 +616,7 @@ impl SignalDB {
         }
     }
 
-    /// Converts a raw value into an “instantaneous” `SignalLog` with physical value, text, and metadata.
+    /// Converts a raw value into an "instantaneous" `SignalLog` with physical value, text, and metadata.
     ///
     /// *Note*: the unit is normalized by removing an optional `"Unit_"` prefix.
     #[inline]
@@ -578,7 +656,7 @@ pub struct NodeDB {
     /// Associated comment (if present).
     pub comment: String,
     /// Messages transmitted by this node.
-    pub messages_sent: Vec<MessageId>,
+    pub messages_sent: Vec<MessageKey>,
 }
 
 impl NodeDB {

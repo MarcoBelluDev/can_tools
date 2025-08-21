@@ -44,7 +44,7 @@ use encoding_rs::WINDOWS_1252;
 /// - Parsing stops only at the end of the file; malformed lines are skipped.
 ///
 pub fn from_file(path: &str) -> Result<Database, String> {
-    // check if provided file has .asc format
+    // check if provided file has .dbc format
     if !path.ends_with(".dbc") {
         return Err("Not a valid .dbc file format".to_string());
     }
@@ -52,7 +52,7 @@ pub fn from_file(path: &str) -> Result<Database, String> {
     let file: File = File::open(path).map_err(|e| format!("Error opening file: {}", e))?;
     let mut reader: BufReader<File> = BufReader::new(file);
 
-    // read raw byted
+    // read raw bytes
     let mut bytes: Vec<u8> = Vec::new();
     reader
         .read_to_end(&mut bytes)
@@ -80,8 +80,7 @@ pub fn from_file(path: &str) -> Result<Database, String> {
     let mut db: Database = Database::default();
     let mut i: usize = 0;
 
-    
-while i < lines.len() {
+    while i < lines.len() {
         // Work on a trimmed-start slice to preserve inner spaces
         let s: &str = lines[i].trim_start();
 
@@ -97,24 +96,18 @@ while i < lines.len() {
 
         if tok.eq_ignore_ascii_case("VERSION") {
             support::version::decode(&mut db, s);
-
         } else if tok.eq_ignore_ascii_case("BA_") {
             // Handle both database-level attributes and message cycle time here.
             support::basic_info::decode(&mut db, s);
             support::messages::cycle_time(&mut db, s);
-
         } else if tok.eq_ignore_ascii_case("BU_") {
             support::nodes::decode(&mut db, s);
-
         } else if tok.eq_ignore_ascii_case("BO_") {
             support::messages::decode(&mut db, s);
-
         } else if tok.eq_ignore_ascii_case("SG_") {
             support::signals::decode(&mut db, s);
-
         } else if tok.eq_ignore_ascii_case("BO_TX_BU_") {
             support::messages::tx_nodes(&mut db, s);
-
         } else if tok.eq_ignore_ascii_case("CM_") {
             // Second token determines target: "…", BO_, SG_, BU_
             let second = it.next().unwrap_or("");
@@ -141,12 +134,42 @@ while i < lines.len() {
                 }
                 support::nodes::comments(&mut db, &full_comment_line);
             }
-
         } else if tok.eq_ignore_ascii_case("VAL_") {
             support::signals::value_table(&mut db, s);
         }
 
         i += 1;
     }
-Ok(db)
+
+    
+    // Sanity checks with SlotMap: order keys exist and lookups point to valid entries
+    #[cfg(debug_assertions)]
+    {
+        debug_assert!(db.nodes_order.iter().all(|&k| db.nodes.contains_key(k)));
+        debug_assert!(db.messages_order.iter().all(|&k| db.messages.contains_key(k)));
+        debug_assert!(db.signals_order.iter().all(|&k| db.signals.contains_key(k)));
+
+        debug_assert!(db.node_key_by_name.values().all(|&k| db.nodes.contains_key(k)));
+        debug_assert!(db.msg_key_by_id.values().all(|&k| db.messages.contains_key(k)));
+        debug_assert!(db.msg_key_by_hex.values().all(|&k| db.messages.contains_key(k)));
+        debug_assert!(db.msg_key_by_name.values().all(|&k| db.messages.contains_key(k)));
+        debug_assert!(db.sig_key_by_name.values().all(|&k| db.signals.contains_key(k)));
+
+        debug_assert!(db.messages.values().all(|m|
+            m.sender_nodes.iter().all(|&nk| db.nodes.contains_key(nk))
+        ));
+        debug_assert!(db.messages.values().all(|m|
+            m.signals.iter().all(|&sk| db.signals.contains_key(sk))
+        ));
+        debug_assert!(db.signals.values().all(|s|
+            db.messages.contains_key(s.message) &&
+            s.receiver_nodes.iter().all(|&nk| db.nodes.contains_key(nk))
+        ));
+    }
+
+    db.sort_nodes_by_name();
+    db.sort_messages_by_name();
+    db.sort_signals_by_name();
+
+    Ok(db)
 }

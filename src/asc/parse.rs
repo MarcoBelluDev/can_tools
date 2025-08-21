@@ -16,22 +16,22 @@ use crate::{CanLog, Database};
 /// Absolute time handling:
 /// - The first line matching `abs_time::from_line` is taken as the **start time**.
 /// - From that point on, `asc::line::parse` formats each frame’s `absolute_time` as
-/// `start + timestamp` using `"%Y-%m-%d %H:%M:%S%.3f"`.
-/// If no `date` header is found, frames fall back to a synthetic time string
-/// derived from the timestamp (see `seconds_to_hms_string`).
+///   `start + timestamp` using `"%Y-%m-%d %H:%M:%S%.3f"`.
+///   If no `date` header is found, frames fall back to a synthetic time string
+///   derived from the timestamp (see `seconds_to_hms_string`).
 ///
 /// # Parameters
 /// - `path`: Path to the `.asc` file. Must end with `.asc`.
 /// - `db_list`: Mapping **channel → Database** used to enrich frames (e.g., message
-/// name and sender). If a channel has no entry, enrichment is skipped.
-/// Extended IDs in traces may end with `x`/`X`; the parser trims that and adds `0x`
-/// before calling `Database::get_message_by_id_hex`.
+///   name and sender). If a channel has no entry, enrichment is skipped.
+///   Extended IDs in traces may end with `x`/`X`; the parser trims that and adds `0x`
+///   before calling `Database::get_message_by_id_hex`.
 ///
 /// # Returns
 /// - `Ok(CanLog)` on success, where:
 /// - `all_frame` contains **all** parsed frames, in file order;
 /// - `last_id_chn_frame` contains **one** frame per `(numeric id, channel)`—the one
-/// with the greatest `timestamp`;
+///   with the greatest `timestamp`;
 /// - `absolute_time` (in `CanLog`) is set if a `date` header was found, otherwise left at default.
 /// - `Err(String)` if the extension is not `.asc` or if the file cannot be opened.
 ///
@@ -42,11 +42,11 @@ use crate::{CanLog, Database};
 /// # Behavior & Invariants
 /// - Only the **first** valid `date` header is used; subsequent lines are treated as data.
 /// - Frame parsing is delegated to `asc::line::parse`, which infers protocol
-/// (`"CAN"` vs `"CAN FD"`) from payload length.
+///   (`"CAN"` vs `"CAN FD"`) from payload length.
 /// - The `(numeric id, channel)` key uses the raw `id` string from the log (which may
-/// include an `'x'`/`'X'` suffix for extended identifiers) and `channel` as `usize`.
+///   include an `'x'`/`'X'` suffix for extended identifiers) and `channel` as `usize`.
 /// - Lines may contain optional ECU tokens between `direction` and the `d` marker; the
-/// line parser locates `d` dynamically and reads exactly `length` data bytes.
+///   line parser locates `d` dynamically and reads exactly `length` data bytes.
 ///
 /// # Complexity
 /// - Time: O(N) over the number of lines (single pass).
@@ -55,7 +55,7 @@ use crate::{CanLog, Database};
 ///
 /// # Notes
 /// - Lines are streamed with `BufRead::lines()`. Non-frame lines are ignored unless
-/// they match the `date` header format handled by `abs_time::from_line`.
+///   they match the `date` header format handled by `abs_time::from_line`.
 pub fn from_file(path: &str, db_list: &HashMap<u8, Database>) -> Result<CanLog, String> {
     // check if provided file has .asc format
     if !path.ends_with(".asc") {

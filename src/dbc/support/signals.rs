@@ -1,4 +1,4 @@
-use crate::types::database::{Database, NodeId, SignalDB};
+use crate::types::database::{Database, MessageDB, NodeKey, SignalKey};
 use std::collections::HashMap;
 
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
@@ -111,25 +111,21 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     };
 
     // 5) receivers (space-separated)
-    let mut receiver_nodes: Vec<NodeId> = Vec::new();
+    let mut receiver_nodes: Vec<NodeKey> = Vec::new();
 
     // Spezza anche i token contenenti virgole
     for name in it
-        .flat_map(|chunk| chunk.split(','))                  // <- split su virgola dentro al token
+        .flat_map(|chunk| chunk.split(',')) // <- split su virgola dentro al token
         .map(|s| s.trim().trim_matches(|c| c == ',' || c == ';')) // pulisci virgole/; residui
         .filter(|s| !s.is_empty())
     {
-        if let Some(nid) = db.get_node_id_by_name(name) {
-            receiver_nodes.push(nid);
+        if let Some(rif) = db.get_node_key_by_name(name) {
+            receiver_nodes.push(rif);
         }
     }
 
-    // current message id is the last one
-    let mid: usize = db.messages.len() - 1;
-
-    let mut sig: SignalDB = SignalDB {
-        message: crate::types::database::MessageId(mid),
-        name,
+    let sig_rif: SignalKey = db.add_signal_if_absent(
+        &name,
         bit_start,
         bit_length,
         endian,
@@ -138,15 +134,18 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         offset,
         min,
         max,
-        unit_of_measurement: unit,
+        &unit,
         receiver_nodes,
-        comment: String::new(),
-        value_table: HashMap::new(),
-        steps: Vec::new(),
-    };
+    );
 
-    sig.compile_inline();
-    db.add_signal(sig);
+    // link the signal to current message
+    if let Some(msg_key) = db.current_msg {
+        if let Some(msg) = db.messages.get_mut(msg_key) {
+            if !msg.signals.contains(&sig_rif) {
+                msg.signals.push(sig_rif);
+            }
+        }
+    }
 }
 
 /// Parse a signal-level comment:
@@ -163,24 +162,27 @@ pub(crate) fn comments(db: &mut Database, text: &str) {
     let message_id: u64 = parts[2].parse::<u64>().unwrap_or(0);
     let signal_name: &str = parts[3].trim_matches('"'); // usually not quoted here
 
-    if let Some(msg) = db.get_message_by_id(message_id) {
-        // find signal id by name within msg
-        if let Some(&sid) = msg
-            .signals
-            .iter()
-            .find(|&&sid| db.signals[sid.0].name.eq_ignore_ascii_case(signal_name))
-        {
-            if let Some(s) = db.signals.get_mut(sid.0) {
-                // Extract quoted comment
-                let first_quote = match text.find('\"') {
-                    Some(p) => p,
-                    None => return,
-                };
-                let last_quote: usize = match text.rfind('\"') {
-                    Some(p) if p > first_quote => p,
-                    _ => return,
-                };
-                s.comment = text[first_quote + 1..last_quote].to_string();
+    // Risolvi il SignalKey cercando per nome *dentro il messaggio*,
+    // ma chiudi il borrow immutabile di `db` in questo blocco.
+    let sig_key_opt: Option<SignalKey> = {
+        let msg: &MessageDB = match db.get_message_by_id(message_id) {
+            Some(m) => m,
+            None => return,
+        };
+
+        msg.signals.iter().copied().find(|&sig_key| {
+            db.get_sig_by_key(sig_key)
+                .is_some_and(|s| s.name.eq_ignore_ascii_case(signal_name))
+        })
+    };
+
+    // Ora puoi prendere un borrow mutabile di `db` per aggiornare il commento.
+    if let Some(sig_key) = sig_key_opt {
+        if let Some(s) = db.get_sig_by_key_mut(sig_key) {
+            if let (Some(first), Some(last)) = (text.find('"'), text.rfind('"')) {
+                if last > first {
+                    s.comment = text[first + 1..last].to_string();
+                }
             }
         }
     }
@@ -236,12 +238,11 @@ pub(crate) fn value_table(db: &mut Database, line: &str) {
     }
 
     if let Some(msg) = db.get_message_by_id(message_id) {
-        if let Some(&sid) = msg
-            .signals
-            .iter()
-            .find(|&&sid| db.signals[sid.0].name == signal_name)
-        {
-            if let Some(s) = db.signals.get_mut(sid.0) {
+        if let Some(&sig_key) = msg.signals.iter().find(|&&sig_key| {
+            db.get_sig_by_key(sig_key)
+                .is_some_and(|s| s.name == signal_name)
+        }) {
+            if let Some(s) = db.get_sig_by_key_mut(sig_key) {
                 s.value_table = table;
             }
         }
