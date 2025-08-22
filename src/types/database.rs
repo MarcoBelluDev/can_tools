@@ -1,11 +1,17 @@
-//! DBC data model.
+//! Database model (SlotMap-backed).
 //!
-//! This module defines the "DB-side" types used to represent a CAN database
-//! (`.dbc` or `.arxml` file) once parsed. The types here are designed to:
-//! - Navigate messages, signals, and nodes (ECUs);
-//! - Perform fast lookups via normalized keys;
-//! - Provide utilities to extract/decode a signal's raw value
-//!   starting from a byte payload.
+//! This module defines the in-memory **CAN database** used by the DBC/ARXML parsers.
+//! Storage uses **SlotMap** arenas with **stable keys**: [`NodeKey`], [`MessageKey`], [`SignalKey`].
+//! Public iteration follows **order vectors** via `iter_nodes()`, `iter_messages()`, `iter_signals()`
+//! and you can reorder presentation with `sort_nodes_by_name()`, `sort_messages_by_name()`, `sort_signals_by_name()`.
+//!
+//! **Lookups** are normalized and O(1): `get_message_by_id/_hex/_name`, `get_node_by_name`, `get_signal_by_name`.
+//! Names are case-insensitive; hexadecimal IDs use uppercase `0x...` form.
+//!
+//! Signal decoding utilities live on [`SignalDB`]: `compile_inline()`, `extract_raw_u64/i64()`, and `to_sigframe()`.
+//!
+//! _Docs refreshed: 2025-08-22_
+//!
 
 use std::collections::HashMap;
 use slotmap::{SlotMap, new_key_type};
@@ -38,18 +44,25 @@ pub struct Database {
     /// Database comment.
     pub comment: String,
 
-    // --- Main storage (stable-key arenas) ---
+    // --- Main storage (stable-key maps) ---
     pub nodes: SlotMap<NodeKey, NodeDB>,
     pub messages: SlotMap<MessageKey, MessageDB>,
     pub signals: SlotMap<SignalKey, SignalDB>,
 
-    // --- Order "views" (you can reorder these without touching the arenas) ---
+    // --- Order "views"  ---
     pub nodes_order: Vec<NodeKey>,
     pub messages_order: Vec<MessageKey>,
     pub signals_order: Vec<SignalKey>,
 
-    // --- Misc info (left as-is from your model) ---
+    // --- CANoe CAPL-Generator parameters ---
+    pub gen_nwm_talk_nm: String,
+    pub gen_nwm_goto_mode_awake: String,
+    pub gen_nwm_goto_mode_bus_sleep: String,
+
+    // --- Network managment parameter ---
     pub nm_type: String,
+
+    // --- Other parameters ---
     pub manufacturer: String,
     pub nmh_message_count: u8,
     pub nmh_base_address: u32,
@@ -71,10 +84,7 @@ pub struct Database {
     pub version_day: u8,
     pub vagtp20_setup_start_address: u8,
     pub vagtp20_setup_message_count: u8,
-    pub gen_nwm_talk_nm: String,
     pub gen_nwm_sleep_time: u16,
-    pub gen_nwm_goto_mode_bus_sleep: String,
-    pub gen_nwm_goto_mode_awake: String,
     pub gen_nwm_ap_can_wake_up: String,
     pub gen_nwm_ap_can_sleep: String,
     pub gen_nwm_ap_can_on: String,
@@ -103,10 +113,9 @@ impl Database {
         if let Some(r) = self.get_node_key_by_name(name) {
             return r;
         }
-        let key = self.nodes.insert(NodeDB {
+        let key: NodeKey = self.nodes.insert(NodeDB {
             name: name.to_string(),
-            comment: String::new(),
-            messages_sent: Vec::new(),
+            ..Default::default()
         });
         self.nodes_order.push(key);
         self.node_key_by_name.insert(name.to_lowercase(), key);
@@ -135,7 +144,7 @@ impl Database {
 
         let norm_id_hex: String = normalize_id_hex(id_hex);
 
-        let msg_key = self.messages.insert(MessageDB {
+        let msg_key: MessageKey = self.messages.insert(MessageDB {
             id,
             id_hex: norm_id_hex.clone(),
             name: name.to_string(),
@@ -182,7 +191,7 @@ impl Database {
             return r;
         }
 
-        let msg_key = match self.current_msg {
+        let msg_key: MessageKey = match self.current_msg {
             Some(k) => k,
             None => {
                 // Create a fallback message if an SG_ appears before any BO_ (rare).
@@ -190,7 +199,7 @@ impl Database {
             }
         };
 
-        let mut sig = SignalDB {
+        let mut sig: SignalDB = SignalDB {
             message: msg_key,
             name: name.to_string(),
             bit_start,
@@ -209,7 +218,7 @@ impl Database {
         };
         sig.compile_inline();
 
-        let sig_key = self.signals.insert(sig);
+        let sig_key: SignalKey = self.signals.insert(sig);
         self.signals_order.push(sig_key);
 
         if let Some(m) = self.messages.get_mut(msg_key) {
@@ -222,53 +231,53 @@ impl Database {
         sig_key
     }
 
-    // ---- Getter, not for customer, based on Keys ----
+    // ---- Key Getters ----
 
     // --------- Nodes --------
-    pub(crate) fn get_node_key_by_name(&self, name: &str) -> Option<NodeKey> {
+    pub fn get_node_key_by_name(&self, name: &str) -> Option<NodeKey> {
         self.node_key_by_name.get(&name.to_lowercase()).copied()
     }
 
-    pub(crate) fn get_node_by_key(&self, key: NodeKey) -> Option<&NodeDB> {
+    pub fn get_node_by_key(&self, key: NodeKey) -> Option<&NodeDB> {
         self.nodes.get(key)
     }
 
-    pub(crate) fn get_node_by_key_mut(&mut self, key: NodeKey) -> Option<&mut NodeDB> {
+    pub fn get_node_by_key_mut(&mut self, key: NodeKey) -> Option<&mut NodeDB> {
         self.nodes.get_mut(key)
     }
 
     // --------- Messages --------
-    pub(crate) fn get_msg_key_by_name(&self, name: &str) -> Option<MessageKey> {
+    pub fn get_msg_key_by_name(&self, name: &str) -> Option<MessageKey> {
         self.msg_key_by_name.get(&name.to_lowercase()).copied()
     }
 
-    pub(crate) fn get_msg_key_by_id(&self, id: &u64) -> Option<MessageKey> {
+    pub fn get_msg_key_by_id(&self, id: &u64) -> Option<MessageKey> {
         self.msg_key_by_id.get(id).copied()
     }
 
-    pub(crate) fn get_msg_key_by_id_hex(&self, id_hex: &str) -> Option<MessageKey> {
+    pub fn get_msg_key_by_id_hex(&self, id_hex: &str) -> Option<MessageKey> {
         let key: String = normalize_id_hex(id_hex); // "0x...UPPERCASE"
         self.msg_key_by_hex.get(&key).copied()
     }
 
-    pub(crate) fn get_message_by_key(&self, key: MessageKey) -> Option<&MessageDB> {
+    pub fn get_message_by_key(&self, key: MessageKey) -> Option<&MessageDB> {
         self.messages.get(key)
     }
 
-    pub(crate) fn get_message_by_key_mut(&mut self, key: MessageKey) -> Option<&mut MessageDB> {
+    pub fn get_message_by_key_mut(&mut self, key: MessageKey) -> Option<&mut MessageDB> {
         self.messages.get_mut(key)
     }
 
     // --------- Signals --------
-    pub(crate) fn get_sig_key_by_name(&self, name: &str) -> Option<SignalKey> {
+    pub fn get_sig_key_by_name(&self, name: &str) -> Option<SignalKey> {
         self.sig_key_by_name.get(&name.to_lowercase()).copied()
     }
 
-    pub(crate) fn get_sig_by_key(&self, key: SignalKey) -> Option<&SignalDB> {
+    pub fn get_sig_by_key(&self, key: SignalKey) -> Option<&SignalDB> {
         self.signals.get(key)
     }
 
-    pub(crate) fn get_sig_by_key_mut(&mut self, key: SignalKey) -> Option<&mut SignalDB> {
+    pub fn get_sig_by_key_mut(&mut self, key: SignalKey) -> Option<&mut SignalDB> {
         self.signals.get_mut(key)
     }
 
@@ -346,9 +355,11 @@ impl Database {
     pub fn iter_nodes(&self) -> impl Iterator<Item = &NodeDB> + '_ {
         self.nodes_order.iter().filter_map(|&k| self.nodes.get(k))
     }
+    /// Iterate messages following `messages_order`. If empty, insertion order is used.
     pub fn iter_messages(&self) -> impl Iterator<Item = &MessageDB> + '_ {
         self.messages_order.iter().filter_map(|&k| self.messages.get(k))
     }
+    /// Iterate signals following `signals_order`. If empty, insertion order is used.
     pub fn iter_signals(&self) -> impl Iterator<Item = &SignalDB> + '_ {
         self.signals_order.iter().filter_map(|&k| self.signals.get(k))
     }
@@ -653,18 +664,52 @@ impl SignalDB {
 pub struct NodeDB {
     /// Node/ECU name.
     pub name: String,
-    /// Associated comment (if present).
+    /// Associated comment
     pub comment: String,
     /// Messages transmitted by this node.
     pub messages_sent: Vec<MessageKey>,
+
+    // --- Canoe parameter ---
+    pub node_layer_modules: String,
+
+    // --- Canoe CAPL-Generator parameters ---
+    pub gen_nod_auto_gen_dsp: Present,
+    pub gen_nod_auto_gen_snd: Present,
+    pub gen_nod_sleep_time: u16,
+
+    // --- Interactive Layer parameter ---
+    pub int_layer_used: Present, 
+
+    // --- Network Managment parameters ---
+    pub nm_node: Present, 
+    pub nm_station_address: String, 
+
+    // --- Other parameters ---
+    pub ecu_variant_default: Present,
+    pub ecu_variant_group: String,
+    pub nmh_node: Present,
+    pub sample_point_canfd_max: u8,
+    pub sample_point_canfd_min: u8,
+    pub sample_point_max: u8,
+    pub sample_point_min: u8,
+    pub ssp_offset_canfd_max: u8,
+    pub ssp_offset_canfd_min: u8,
+    pub sync_jump_width_canfd_max: u8,
+    pub sync_jump_width_canfd_min: u8,
+    pub sync_jump_width_max: u8,
+    pub sync_jump_width_min: u8,
+    pub time_quanta_canfd_max: u8,
+    pub time_quanta_canfd_min: u8,
+    pub time_quanta_max: u8,
+    pub time_quanta_min: u8,
+    pub vag_tp20_target_address: String, 
 }
 
 impl NodeDB {
     /// Resets all fields to their default values.
+    /// Clear the database
     pub fn clear(&mut self) {
-        self.name.clear();
-        self.comment.clear();
-        self.messages_sent.clear();
+        *self = NodeDB::default();
     }
 }
 
@@ -685,4 +730,24 @@ fn normalize_id_hex(s: &str) -> String {
         .or_else(|| t.strip_prefix("0X"))
         .unwrap_or(t);
     format!("0x{}", t.to_uppercase())
+}
+
+#[derive(Default, Clone, PartialEq, Debug)]
+pub enum Present {
+    Yes,
+    #[default]
+    No,
+}
+
+impl Present {
+    pub fn to_str(&self) -> String {
+        match self {
+            Present::Yes => {
+                "Yes".to_string()
+            },
+            Present::No=> {
+                "No".to_string()
+            },
+        }
+    }
 }

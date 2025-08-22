@@ -113,10 +113,10 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     // 5) receivers (space-separated)
     let mut receiver_nodes: Vec<NodeKey> = Vec::new();
 
-    // Spezza anche i token contenenti virgole
+    // Also split tokens containing commas
     for name in it
-        .flat_map(|chunk| chunk.split(',')) // <- split su virgola dentro al token
-        .map(|s| s.trim().trim_matches(|c| c == ',' || c == ';')) // pulisci virgole/; residui
+        .flat_map(|chunk| chunk.split(',')) // <- split on comma inside the token
+        .map(|s| s.trim().trim_matches(|c| c == ',' || c == ';')) // remove trailing commas/semicolons
         .filter(|s| !s.is_empty())
     {
         if let Some(rif) = db.get_node_key_by_name(name) {
@@ -204,7 +204,7 @@ pub(crate) fn value_table(db: &mut Database, line: &str) {
         None => return,
     };
 
-    // Collect pairs value "desc"
+    // Collect pairs: numeric value followed by quoted description
     let mut table: HashMap<i32, String> = HashMap::new();
     let mut t = tokens.peekable();
     while let Some(val_tok) = t.next() {

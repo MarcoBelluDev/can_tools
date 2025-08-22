@@ -1,6 +1,10 @@
 //! # arxml
 //!
-//! `arxml` is the module to work with .arxml files
+//! Parser utilities for reading **AUTOSAR ARXML** files and extracting CAN clusters
+//! into the SlotMap-backed [`Database`]. Ethernet clusters are ignored by design.
+//!
+//! _Module docs refreshed._
+//!
 
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -10,7 +14,7 @@ use std::io::BufReader;
 use crate::types::database::Database;
 
 // <SHORT-NAME>word</SHORT-NAME>
-// triggera tre eventi:
+// triggers three events:
 // Event::Start("SHORT-NAME")
 // Event::Text("SHORT-NAME")
 // Event::End("SHORT-NAME")
@@ -202,7 +206,7 @@ mod tests {
         assert_eq!(db1.baudrate, 500000);
         assert_eq!(db1.baudrate_canfd, 2000000);
 
-        // Secondo cluster CAN base
+        // Second CAN base cluster
         let db2 = &databases[1];
         assert_eq!(db2.name, "Cluster_CAN_2");
         assert_eq!(db2.version, "V2.3.4");

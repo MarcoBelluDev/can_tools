@@ -1,19 +1,19 @@
-//! Types representing a parsed CAN trace and its derived structures.
+//! CAN log model.
 //!
-//! The model is intentionally **decoupled**:
-//! - [`CanFrame`] is a light record about *when* and *where* something was seen.
-//! - [`MessageLog`] contains the actual CAN message metadata and payload for a frame.
-//! - [`SignalLog`] aggregates the evolution of a single decoded signal across the whole log.
+//! Types representing a parsed CAN trace and its derived structures, kept intentionally **decoupled**:
+//! - [`CanFrame`]: timing/channel/direction plus a handle to the associated [`MessageLog`].
+//! - [`MessageLog`]: identifier, name, payload, and per-frame message metadata.
+//! - [`SignalLog`]: time series for a single decoded signal (values over timestamps).
 //!
-//! This split makes the UI code simpler (fast sorting by frame timestamp) while still
-//! letting you access message metadata and iterate signals efficiently.
+//!
+//! _Docs refreshed: 2025-08-22_
+//!
 use std::collections::HashMap;
 
 use crate::types::absolute_time::AbsoluteTime;
 
 /// In-memory representation of a parsed CAN trace.
 ///
-/// A `CanLog` is created by the ASC/DBC parsers and then consumed by downstream UIs/tools.
 /// It stores frames in file order (`all_frame`) and keeps a separate store of message and signal data.
 #[derive(Clone, Default)]
 pub struct CanLog {
@@ -25,6 +25,7 @@ pub struct CanLog {
 
     /// One index per `(id, channel)` — points to the most recent frame in `all_frame` by `timestamp`.
     /// Invariant: every index is valid for `all_frame[idx]` and there is at most one index per unique pair.
+    /// Useful when you need one snapshot per message/channel pair.
     pub last_id_chn_frame: Vec<usize>,
 
     /// One MessageLog per parsed frame (decoupled from `CanFrame`).

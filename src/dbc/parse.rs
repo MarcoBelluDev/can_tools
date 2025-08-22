@@ -92,14 +92,26 @@ pub fn from_file(path: &str) -> Result<Database, String> {
 
         // Extract first token (keyword) without allocating
         let mut it = s.split_ascii_whitespace();
-        let tok = it.next().unwrap_or("");
+        let tok: &str = it.next().unwrap_or("");
 
         if tok.eq_ignore_ascii_case("VERSION") {
             support::version::decode(&mut db, s);
         } else if tok.eq_ignore_ascii_case("BA_") {
-            // Handle both database-level attributes and message cycle time here.
-            support::basic_info::decode(&mut db, s);
-            support::messages::cycle_time(&mut db, s);
+            // Third part must be used to check where the line must be analyzed
+            it.next();
+            let third: &str = it.next().unwrap_or(""); 
+            if third == "BU_" {
+                // additional node info
+                support::nodes::add_info(&mut db, s);
+            } else if third == "BO_" {
+                // additional message info
+                support::messages::cycle_time(&mut db, s);
+            } else if third == "SG_" {
+                // additinoal signal info
+            } else {
+                // additional database info
+                support::basic_info::decode(&mut db, s);
+            }
         } else if tok.eq_ignore_ascii_case("BU_") {
             support::nodes::decode(&mut db, s);
         } else if tok.eq_ignore_ascii_case("BO_") {
@@ -110,7 +122,7 @@ pub fn from_file(path: &str) -> Result<Database, String> {
             support::messages::tx_nodes(&mut db, s);
         } else if tok.eq_ignore_ascii_case("CM_") {
             // Second token determines target: "…", BO_, SG_, BU_
-            let second = it.next().unwrap_or("");
+            let second: &str = it.next().unwrap_or("");
             if second.starts_with('"') {
                 // Network/global comment: CM_ "…";
                 support::basic_info::comment(&mut db, s);
