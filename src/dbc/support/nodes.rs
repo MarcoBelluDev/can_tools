@@ -55,7 +55,11 @@ pub(crate) fn comments(db: &mut Database, text: &str) {
 pub(crate) fn add_info(db: &mut Database, line: &str) {
     let mut parts = line.split_ascii_whitespace();
     parts.next(); // BA_
-    let attribute: &str = parts.next().unwrap_or("");
+    let attribute: &str = match parts.next() {
+        Some(a) => a.trim_matches('"'),
+        None => return,
+    };
+
     match attribute {
         "NodeLayerModules" => {
             parts.next(); // BU_
@@ -66,7 +70,7 @@ pub(crate) fn add_info(db: &mut Database, line: &str) {
             let Some(node) = db.get_node_by_name_mut(name) else { return; };
 
             // assign value
-            node.node_layer_modules = value.trim_end_matches(';').to_string();
+            node.node_layer_modules = value.trim_end_matches(';').trim_matches('"').to_string();
         },
         "GenNodAutoGenDsp" => {
             parts.next(); // BU_
@@ -148,7 +152,7 @@ pub(crate) fn add_info(db: &mut Database, line: &str) {
             let Some(node) = db.get_node_by_name_mut(name) else { return; };
 
             // assign value
-            node.nm_station_address = value.trim_end_matches(';').to_string();
+            node.nm_station_address = value.trim_end_matches(';').parse::<u32>().unwrap_or(0);
         },
         "ECUVariantDefault" => {
             parts.next(); // BU_
@@ -174,7 +178,7 @@ pub(crate) fn add_info(db: &mut Database, line: &str) {
             let Some(node) = db.get_node_by_name_mut(name) else { return; };
 
             // assign value
-            node.ecu_variant_group = value.trim_end_matches(';').to_string();
+            node.ecu_variant_group = value.trim_end_matches(';').trim_matches('"').to_string();
         },
         "NmhNode" => {
             parts.next(); // BU_
@@ -354,7 +358,7 @@ pub(crate) fn add_info(db: &mut Database, line: &str) {
             let Some(node) = db.get_node_by_name_mut(name) else { return; };
 
             // assign value
-            node.vag_tp20_target_address = value.trim_end_matches(';').to_string();
+            node.vag_tp20_target_address = value.trim_end_matches(';').parse::<u32>().unwrap_or(0);
         },
         _ => {
             return;

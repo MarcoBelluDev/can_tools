@@ -1,10 +1,10 @@
 use crate::types::database::{Database, NodeKey};
 
-const CAN_SFF_MASK: u64 = 0x7FF; // 11-bit
-const CAN_EFF_MASK: u64 = 0x1FFF_FFFF; // 29-bit
+const CAN_EFF_MASK: u32 = 0x1FFF_FFFF; // 29 bit
+const CAN_SFF_MASK: u32 = 0x0000_07FF; // 11 bit
 
 #[inline]
-fn id_to_hex(id: u64) -> String {
+fn id_to_hex(id: u32) -> String {
     if id <= CAN_SFF_MASK {
         format!("0x{:03X}", id)
     } else {
@@ -27,7 +27,7 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     let mut split_once = after.splitn(2, char::is_whitespace);
     let id_str: &str = split_once.next().unwrap_or("0");
     let rest: &str = split_once.next().unwrap_or("").trim();
-    let id: u64 = id_str.parse::<u64>().unwrap_or(0);
+    let id: u32 = id_str.parse::<u32>().unwrap_or(0);
 
     // 2) NAME (everything up to the first ':')
     let colon_pos: usize = match rest.find(':') {
@@ -55,9 +55,9 @@ pub(crate) fn tx_nodes(db: &mut Database, line: &str) {
     }
 
     // Find first numeric ID
-    let id: u64 = l
+    let id: u32 = l
         .split_ascii_whitespace()
-        .filter_map(|w| w.parse::<u64>().ok())
+        .filter_map(|w| w.parse::<u32>().ok())
         .next()
         .unwrap_or(0);
     if id == 0 {
@@ -76,24 +76,41 @@ pub(crate) fn tx_nodes(db: &mut Database, line: &str) {
     let nodes_part = nodes_part.trim().trim_end_matches(';');
 
     // Resolve/create NodeIds first (no &mut msg held)
-    let mut node_rif: Vec<NodeKey> = Vec::new();
+    let mut node_keys: Vec<NodeKey> = Vec::new();
     for token in nodes_part.split([',', ' ']) {
-        let name = token.trim();
+        let name: &str = token.trim();
         if name.is_empty() {
             continue;
         }
-        if let Some(rif) = db.get_node_key_by_name(name) {
-            node_rif.push(rif);
-        } else {
-            node_rif.push(db.add_node_if_absent(name));
+        if let Some(k) = db.get_node_key_by_name(name) {
+            node_keys.push(k);
         }
     }
+    if node_keys.is_empty() {
+        return;
+    }
 
-    // Now update the message
-    if let Some(msg) = db.get_message_by_id_mut(id) {
-        for rif in node_rif {
-            if !msg.sender_nodes.contains(&rif) {
-                msg.sender_nodes.push(rif);
+    // take MessageKey once before mutable borrow
+    let Some(msg_key) = db.get_msg_key_by_id(&id) else { return };
+
+    // Update the MessageDB
+    {
+        if let Some(msg) = db.get_message_by_key_mut(msg_key) {
+            for &nk in &node_keys {
+                if !msg.sender_nodes.contains(&nk) {
+                    msg.sender_nodes.push(nk);
+                }
+            }
+        } else {
+            return;
+        }
+    } // end of &mut MessageDB
+
+    // Update the nodes
+    for &nk in &node_keys {
+        if let Some(node) = db.get_node_by_key_mut(nk) {
+            if !node.messages_sent.contains(&msg_key) {
+                node.messages_sent.push(msg_key);
             }
         }
     }
@@ -109,7 +126,7 @@ pub(crate) fn comments(db: &mut Database, line: &str) {
         return;
     }
 
-    let id: u64 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let id: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     if id == 0 {
         return;
     }
@@ -142,7 +159,7 @@ pub(crate) fn cycle_time(db: &mut Database, line: &str) {
         return;
     }
 
-    let id: u64 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let id: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     if id == 0 {
         return;
     }

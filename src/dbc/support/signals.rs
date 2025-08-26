@@ -1,5 +1,5 @@
-use crate::types::database::{Database, MessageDB, NodeKey, SignalKey};
 use std::collections::HashMap;
+use crate::{Database, NodeKey, MessageDB, SignalKey};
 
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
 /// Format (typical):
@@ -159,7 +159,7 @@ pub(crate) fn comments(db: &mut Database, text: &str) {
     if parts.len() < 4 {
         return;
     }
-    let message_id: u64 = parts[2].parse::<u64>().unwrap_or(0);
+    let message_id: u32 = parts[2].parse::<u32>().unwrap_or(0);
     let signal_name: &str = parts[3].trim_matches('"'); // usually not quoted here
 
     // Risolvi il SignalKey cercando per nome *dentro il messaggio*,
@@ -195,9 +195,9 @@ pub(crate) fn value_table(db: &mut Database, line: &str) {
     if tokens.next().map(|s| s.to_ascii_lowercase()) != Some("val_".into()) {
         return;
     }
-    let message_id: u64 = tokens
+    let message_id: u32 = tokens
         .next()
-        .and_then(|t| t.parse::<u64>().ok())
+        .and_then(|t| t.parse::<u32>().ok())
         .unwrap_or(0);
     let signal_name = match tokens.next() {
         Some(n) => n,

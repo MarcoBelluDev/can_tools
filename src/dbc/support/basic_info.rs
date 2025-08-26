@@ -1,4 +1,4 @@
-use crate::types::database::Database;
+use crate::types::database::{BusType, Database};
 
 pub(crate) fn decode(db: &mut Database, line: &str) {
     // Expected formats:
@@ -25,7 +25,11 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         let mut quoted = s.split('"').skip(1).step_by(2);
         if let (Some(key), Some(val)) = (quoted.next(), quoted.next()) {
             if key.eq_ignore_ascii_case("BusType") {
-                db.bustype = val.to_string(); // "CAN" or "CAN FD"
+                db.bustype = if val == "CAN FD" {
+                    BusType::CanFd
+                } else {
+                    BusType::Can
+                }
             }
         }
     } else if line.contains(r#""DBName""#) {
@@ -339,7 +343,7 @@ mod tests {
 
         // Nothing should be set
         assert_eq!(db.baudrate, 0);
-        assert_eq!(db.bustype, "");
+        assert_eq!(db.bustype, BusType::Can);
         assert_eq!(db.name, "");
         assert_eq!(db.baudrate_canfd, 0);
 
@@ -350,7 +354,7 @@ mod tests {
         decode(&mut db, r#"BA_ "BaudrateCANFD" 2000000;"#);
 
         assert_eq!(db.baudrate, 500000);
-        assert_eq!(db.bustype, "CAN FD");
+        assert_eq!(db.bustype, BusType::CanFd);
         assert_eq!(db.name, "TestCAN");
         assert_eq!(db.baudrate_canfd, 2000000);
     }

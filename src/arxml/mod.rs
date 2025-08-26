@@ -11,7 +11,7 @@ use quick_xml::reader::Reader;
 use std::fs::File;
 use std::io::BufReader;
 
-use crate::types::database::Database;
+use crate::types::database::{BusType, Database};
 
 // <SHORT-NAME>word</SHORT-NAME>
 // triggers three events:
@@ -50,7 +50,7 @@ pub fn parse_from_file(path: &str) -> Result<Vec<Database>, String> {
                     "CAN-CLUSTER" => {
                         in_can_cluster = true;
                         let mut _db = Database::default();
-                        _db.bustype = "CAN".to_string();
+                        _db.bustype = BusType::Can;
                         current_db = Some(_db);
                     }
                     "ADMIN-DATA" if in_can_cluster => {
@@ -85,7 +85,7 @@ pub fn parse_from_file(path: &str) -> Result<Vec<Database>, String> {
                             }
                             "CAN-FD-BAUDRATE" => {
                                 db.baudrate_canfd = text.parse().unwrap_or(0);
-                                db.bustype = "CAN-FD".to_string();
+                                db.bustype = BusType::CanFd;
                             }
                             "SD" if capture_version => {
                                 db.version = text;
@@ -202,7 +202,7 @@ mod tests {
         let db1 = &databases[0];
         assert_eq!(db1.name, "Cluster_CAN_1");
         assert_eq!(db1.version, "V1.0.0");
-        assert_eq!(db1.bustype, "CAN-FD");
+        assert_eq!(db1.bustype, BusType::CanFd);
         assert_eq!(db1.baudrate, 500000);
         assert_eq!(db1.baudrate_canfd, 2000000);
 
@@ -210,7 +210,7 @@ mod tests {
         let db2 = &databases[1];
         assert_eq!(db2.name, "Cluster_CAN_2");
         assert_eq!(db2.version, "V2.3.4");
-        assert_eq!(db2.bustype, "CAN");
+        assert_eq!(db2.bustype, BusType::Can);
         assert_eq!(db2.baudrate, 250000);
         assert_eq!(db2.baudrate_canfd, 0);
     }
