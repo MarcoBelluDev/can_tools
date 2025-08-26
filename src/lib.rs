@@ -24,10 +24,10 @@ pub mod types;
 pub use crate::types::{
     absolute_time::AbsoluteTime,
     canlog::{CanFrame, CanLog, MessageLog, SignalLog},
-    database::{Database, Present, NodeKey, MessageKey, SignalKey, BusType},
-    message_db::{MessageDB, IdFormat},
-    signal_db::SignalDB,
+    database::{BusType, Database, MessageKey, NodeKey, Present, SignalKey},
+    message_db::{IdFormat, MessageDB, MuxRole, MuxSelector, MuxInfo},
     node_db::NodeDB,
+    signal_db::SignalDB,
 };
 
 // Helper re-export for UI convenience

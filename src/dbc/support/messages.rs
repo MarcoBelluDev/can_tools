@@ -91,7 +91,9 @@ pub(crate) fn tx_nodes(db: &mut Database, line: &str) {
     }
 
     // take MessageKey once before mutable borrow
-    let Some(msg_key) = db.get_msg_key_by_id(&id) else { return };
+    let Some(msg_key) = db.get_msg_key_by_id(&id) else {
+        return;
+    };
 
     // Update the MessageDB
     {
@@ -108,11 +110,7 @@ pub(crate) fn tx_nodes(db: &mut Database, line: &str) {
 
     // Update the nodes
     for &nk in &node_keys {
-        if let Some(node) = db.get_node_by_key_mut(nk) {
-            if !node.messages_sent.contains(&msg_key) {
-                node.messages_sent.push(msg_key);
-            }
-        }
+        db.add_tx_msg_for_node(nk, msg_key);
     }
 }
 

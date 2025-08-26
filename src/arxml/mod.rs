@@ -49,9 +49,10 @@ pub fn parse_from_file(path: &str) -> Result<Vec<Database>, String> {
                 match tag.as_str() {
                     "CAN-CLUSTER" => {
                         in_can_cluster = true;
-                        let mut _db = Database::default();
-                        _db.bustype = BusType::Can;
-                        current_db = Some(_db);
+                        current_db = Some(Database {
+                            bustype: BusType::Can,
+                            ..Default::default()
+                        });
                     }
                     "ADMIN-DATA" if in_can_cluster => {
                         in_admin_data = true;

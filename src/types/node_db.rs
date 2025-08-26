@@ -19,11 +19,11 @@ pub struct NodeDB {
     pub gen_nod_sleep_time: u16,
 
     // --- Interactive Layer parameter ---
-    pub int_layer_used: Present, 
+    pub int_layer_used: Present,
 
     // --- Network Managment parameters ---
-    pub nm_node: Present, 
-    pub nm_station_address: u32, 
+    pub nm_node: Present,
+    pub nm_station_address: u32,
 
     // --- Other parameters ---
     pub ecu_variant_default: Present,
@@ -43,7 +43,7 @@ pub struct NodeDB {
     pub time_quanta_canfd_min: u8,
     pub time_quanta_max: u8,
     pub time_quanta_min: u8,
-    pub vag_tp20_target_address: u32, 
+    pub vag_tp20_target_address: u32,
 }
 
 impl NodeDB {

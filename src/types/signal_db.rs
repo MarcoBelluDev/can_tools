@@ -1,5 +1,5 @@
+use crate::{Database, MessageKey, NodeDB, NodeKey, SignalLog, MuxInfo};
 use std::collections::HashMap;
-use crate::{Database, MessageKey, SignalLog, NodeKey, NodeDB};
 
 /// Elementary step for extracting a bit field from a payload.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -48,8 +48,10 @@ pub struct SignalDB {
     pub comment: String,
     /// Value-to-text mapping (value table).
     pub value_table: HashMap<i32, String>,
-    /// Precomputed extraction steps for fast decoding.
+    // Precomputed extraction steps for fast decoding.
     pub(crate) steps: Vec<Step>,
+    /// Multiplexing metadata (None if not multiplexed).
+    pub mux: Option<MuxInfo>,
 }
 
 impl SignalDB {

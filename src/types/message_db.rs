@@ -1,4 +1,5 @@
-use crate::{SignalKey, NodeKey, Database, SignalDB};
+use std::collections::HashMap;
+use crate::{Database, NodeKey, SignalDB, SignalKey};
 
 /// CAN message defined in the database (DBC/ARXML).
 ///
@@ -27,6 +28,13 @@ pub struct MessageDB {
     pub signals: Vec<SignalKey>,
     /// Associated comment (DBC `CM_ BO_` section).
     pub comment: String,
+    /// List of multiplexer switch signals (primary first). Empty if none.
+    pub mux_switches: Vec<SignalKey>,
+
+    /// Fast lookup: for each switch -> for each selector -> signals gated by that selector.
+    ///
+    /// Example: mux_cases[POS_MUX][Value(0)] = [POS_PosStati, POS_LatDirection, ...]
+    pub mux_cases: HashMap<SignalKey, HashMap<MuxSelector, Vec<SignalKey>>>,
 }
 
 impl MessageDB {
@@ -45,27 +53,10 @@ impl MessageDB {
 
     /// Convenience iterator over the `SignalDB`s belonging to this message.
     pub fn signals<'a>(&'a self, db: &'a Database) -> impl Iterator<Item = &'a SignalDB> + 'a {
-        self.signals.iter().filter_map(move |&key| db.get_sig_by_key(key))
+        self.signals
+            .iter()
+            .filter_map(move |&key| db.get_sig_by_key(key))
     }
-}
-
-// --- helpers ---
-
-/// Normalizes a hexadecimal ID string.
-///
-/// Converts variants such as `"12DD54E3x"`, `"0x12dd54e3"`, `"12dd54e3"`
-/// into the canonical form `"0x12DD54E3"`.
-pub(crate) fn normalize_id_hex(s: &str) -> String {
-    let t: &str = s.trim();
-    let t: &str = t
-        .strip_suffix('x')
-        .or_else(|| t.strip_suffix('X'))
-        .unwrap_or(t);
-    let t: &str = t
-        .strip_prefix("0x")
-        .or_else(|| t.strip_prefix("0X"))
-        .unwrap_or(t);
-    format!("0x{}", t.to_uppercase())
 }
 
 #[derive(Default, Clone, PartialEq, Debug)]
@@ -78,12 +69,42 @@ pub enum IdFormat {
 impl IdFormat {
     pub fn to_str(&self) -> String {
         match self {
-            IdFormat::Standard => {
-                "Standard".to_string()
-            },
-            IdFormat::Extended=> {
-                "Extended".to_string()
-            },
+            IdFormat::Standard => "Standard".to_string(),
+            IdFormat::Extended => "Extended".to_string(),
         }
     }
+}
+
+/// What role (if any) a signal plays in multiplexing.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum MuxRole {
+    /// Not multiplexed (always present).
+    #[default]
+    None,
+    /// This signal is the multiplexer switch (marked as `M` in DBC).
+    Switch,
+    /// This signal is gated by a multiplexer value (marked as `mX` / `SG_MUL_VAL_`).
+    Dependent,
+}
+
+/// A selector for multiplexed signals: either a single value or a closed range.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum MuxSelector {
+    /// Active only when the switch == value.
+    Value(u32),
+    /// Active only when min <= switch <= max.
+    Range { min: u32, max: u32 },
+}
+
+/// Multiplexing metadata attached to a signal.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MuxInfo {
+    /// Role of this signal in multiplexing.
+    pub role: MuxRole,
+    /// Optional group index (extended multiplexing). `0` if unused.
+    pub group: u8,
+    /// For `Dependent` signals, the switch controlling it. `None` otherwise.
+    pub switch: Option<SignalKey>,
+    /// For `Dependent` signals, the allowed selectors (values/ranges). Empty otherwise.
+    pub selectors: Vec<MuxSelector>,
 }

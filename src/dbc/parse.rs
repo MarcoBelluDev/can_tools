@@ -99,7 +99,7 @@ pub fn from_file(path: &str) -> Result<Database, String> {
         } else if tok.eq_ignore_ascii_case("BA_") {
             // Third part must be used to check where the line must be analyzed
             it.next();
-            let third: &str = it.next().unwrap_or(""); 
+            let third: &str = it.next().unwrap_or("");
             if third == "BU_" {
                 // additional node info
                 support::nodes::add_info(&mut db, s);
@@ -153,30 +153,59 @@ pub fn from_file(path: &str) -> Result<Database, String> {
         i += 1;
     }
 
-    
     // Sanity checks with SlotMap: order keys exist and lookups point to valid entries
     #[cfg(debug_assertions)]
     {
         debug_assert!(db.nodes_order.iter().all(|&k| db.nodes.contains_key(k)));
-        debug_assert!(db.messages_order.iter().all(|&k| db.messages.contains_key(k)));
+        debug_assert!(
+            db.messages_order
+                .iter()
+                .all(|&k| db.messages.contains_key(k))
+        );
         debug_assert!(db.signals_order.iter().all(|&k| db.signals.contains_key(k)));
 
-        debug_assert!(db.node_key_by_name.values().all(|&k| db.nodes.contains_key(k)));
-        debug_assert!(db.msg_key_by_id.values().all(|&k| db.messages.contains_key(k)));
-        debug_assert!(db.msg_key_by_hex.values().all(|&k| db.messages.contains_key(k)));
-        debug_assert!(db.msg_key_by_name.values().all(|&k| db.messages.contains_key(k)));
-        debug_assert!(db.sig_key_by_name.values().all(|&k| db.signals.contains_key(k)));
+        debug_assert!(
+            db.node_key_by_name
+                .values()
+                .all(|&k| db.nodes.contains_key(k))
+        );
+        debug_assert!(
+            db.msg_key_by_id
+                .values()
+                .all(|&k| db.messages.contains_key(k))
+        );
+        debug_assert!(
+            db.msg_key_by_hex
+                .values()
+                .all(|&k| db.messages.contains_key(k))
+        );
+        debug_assert!(
+            db.msg_key_by_name
+                .values()
+                .all(|&k| db.messages.contains_key(k))
+        );
+        debug_assert!(
+            db.sig_key_by_name
+                .values()
+                .all(|&k| db.signals.contains_key(k))
+        );
 
-        debug_assert!(db.messages.values().all(|m|
-            m.sender_nodes.iter().all(|&nk| db.nodes.contains_key(nk))
-        ));
-        debug_assert!(db.messages.values().all(|m|
-            m.signals.iter().all(|&sk| db.signals.contains_key(sk))
-        ));
-        debug_assert!(db.signals.values().all(|s|
-            db.messages.contains_key(s.message) &&
-            s.receiver_nodes.iter().all(|&nk| db.nodes.contains_key(nk))
-        ));
+        debug_assert!(
+            db.messages
+                .values()
+                .all(|m| m.sender_nodes.iter().all(|&nk| db.nodes.contains_key(nk)))
+        );
+        debug_assert!(
+            db.messages
+                .values()
+                .all(|m| m.signals.iter().all(|&sk| db.signals.contains_key(sk)))
+        );
+        debug_assert!(
+            db.signals
+                .values()
+                .all(|s| db.messages.contains_key(s.message)
+                    && s.receiver_nodes.iter().all(|&nk| db.nodes.contains_key(nk)))
+        );
     }
 
     db.sort_nodes_by_name();

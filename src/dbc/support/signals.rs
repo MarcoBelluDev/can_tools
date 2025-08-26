@@ -1,5 +1,5 @@
+use crate::{Database, MessageDB, NodeKey, SignalKey};
 use std::collections::HashMap;
-use crate::{Database, NodeKey, MessageDB, SignalKey};
 
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
 /// Format (typical):
