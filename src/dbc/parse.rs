@@ -208,9 +208,12 @@ pub fn from_file(path: &str) -> Result<Database, String> {
         );
     }
 
-    db.sort_nodes_by_name();
-    db.sort_messages_by_name();
-    db.sort_signals_by_name();
+    db.sort_db_nodes_by_name();
+    db.sort_db_messages_by_name();
+    db.sort_db_signals_by_name();
+    db.sort_all_node_fields();
+    db.sort_all_message_fields();
+    db.sort_all_signal_fields();
 
     Ok(db)
 }

@@ -460,6 +460,6 @@ pub(crate) fn add_info(db: &mut Database, line: &str) {
             // assign value
             node.vag_tp20_target_address = value.trim_end_matches(';').parse::<u32>().unwrap_or(0);
         }
-        _ => {},
+        _ => {}
     }
 }

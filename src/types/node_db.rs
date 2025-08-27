@@ -1,4 +1,4 @@
-use crate::{MessageKey, Present};
+use crate::{MessageKey, Present, SignalKey};
 
 /// Node/ECU defined in the database.
 #[derive(Default, Clone, PartialEq, Debug)]
@@ -9,6 +9,10 @@ pub struct NodeDB {
     pub comment: String,
     /// Messages transmitted by this node.
     pub messages_sent: Vec<MessageKey>,
+    /// Signals read by this node
+    pub signals_sent: Vec<SignalKey>,
+    /// Signals read by this node
+    pub signals_read: Vec<SignalKey>,
 
     // --- Canoe parameter ---
     pub node_layer_modules: String,

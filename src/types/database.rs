@@ -15,9 +15,8 @@
 
 use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
-use std::cmp::Ordering;
 
-use crate::{IdFormat, MessageDB, NodeDB, SignalDB};
+use crate::{IdFormat, MessageDB, MuxInfo, MuxRole, MuxSelector, NodeDB, SignalDB};
 
 // --- Stable keys (SlotMap) ---
 new_key_type! { pub struct NodeKey; }
@@ -122,30 +121,34 @@ impl Database {
         key
     }
 
-    /// Insert `MessageKey` in `messages_sent` of Node `nk`
-    /// Keep case-insensitive alfabetical order. No duplicates.
+    /// Insert `MessageKey` in `messages_sent` of Node `nk`. No duplicates.
     pub fn add_tx_msg_for_node(&mut self, nk: NodeKey, msg_key: MessageKey) {
-        let Some(target_name) = self.get_message_by_key(msg_key).map(|m| m.name.as_str()) else {
+        // Check that the message exist
+        if self.get_message_by_key(msg_key).is_none() {
             return;
+        }
+
+        // take signals of the message as immutable borrow
+        let msg_signals: Vec<SignalKey> = {
+            let Some(msg) = self.get_message_by_key(msg_key) else {
+                return;
+            };
+            msg.signals.clone()
         };
 
-        // immutable borrow to get the position
-        let insert_pos: usize = {
-            let Some(node_ro) = self.get_node_by_key(nk) else { return; };
-
-            match node_ro.messages_sent.binary_search_by(|k| {
-                let name = self.get_message_by_key(*k).map(|m| m.name.as_str()).unwrap_or("");
-                // order by name (case insensitive)
-                cmp_ascii_ci(name, target_name).then_with(|| k.cmp(&msg_key))
-            }) {
-                Ok(_) => return,       // already present, nothing to do
-                Err(ins) => ins,       // insert position
+        // Update the node taking it as mutable borrow
+        if let Some(node) = self.get_node_by_key_mut(nk) {
+            // trasmitted message update
+            if !node.messages_sent.contains(&msg_key) {
+                node.messages_sent.push(msg_key);
             }
-        };
 
-        // Mutable borrow to write
-        if let Some(node_rw) = self.get_node_by_key_mut(nk) {
-            node_rw.messages_sent.insert(insert_pos, msg_key);
+            // trasmitted signals update
+            for sk in msg_signals {
+                if !node.signals_sent.contains(&sk) {
+                    node.signals_sent.push(sk);
+                }
+            }
         }
     }
 
@@ -216,7 +219,7 @@ impl Database {
             sender_nodes: sender_node_id.into_iter().collect(),
             signals: Vec::new(),
             comment: String::new(),
-            mux_switches: Vec::new(),
+            mux_multiplexors: Vec::new(),
             mux_cases: HashMap::new(),
         });
 
@@ -296,9 +299,9 @@ impl Database {
         self.get_message_by_key_mut(key)
     }
 
-
     // -------------- Signals ------------
-    /// Adds a signal to the database if not already present and returns the corresponding `SignalKey`.
+    // Adds a signal to the database if not already present and returns the corresponding `SignalKey`.
+    // valid only during construction of DB from .dbc because of current_message!
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_signal_if_absent(
         &mut self,
@@ -313,6 +316,8 @@ impl Database {
         max: f64,
         unit: &str,
         receiver_nodes: Vec<NodeKey>,
+        mux_role: MuxRole,
+        mux_selectors: &[MuxSelector],
     ) -> SignalKey {
         if let Some(r) = self.get_sig_key_by_name(name) {
             return r;
@@ -324,6 +329,32 @@ impl Database {
                 // Create a fallback message if an SG_ appears before any BO_ (rare).
                 self.add_message_if_absent("__UNBOUND__", 0, "0x0", 8, "")
             }
+        };
+
+        // if signal is Multiplexed, try to guess the Multiplexor if there is only one in the message
+        let inferred_switch: Option<SignalKey> = if mux_role == MuxRole::Multiplexed {
+            if let Some(msg) = self.get_message_by_key(msg_key) {
+                if msg.mux_multiplexors.len() == 1 {
+                    Some(msg.mux_multiplexors[0])
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let mux: Option<MuxInfo> = if mux_role == MuxRole::None {
+            None
+        } else {
+            Some(MuxInfo {
+                role: mux_role,
+                group: 0,
+                switch: inferred_switch,
+                selectors: mux_selectors.to_vec(),
+            })
         };
 
         let mut sig: SignalDB = SignalDB {
@@ -342,23 +373,85 @@ impl Database {
             comment: String::new(),
             value_table: HashMap::new(),
             steps: Vec::new(),
-            mux: None, 
+            mux,
         };
         sig.compile_inline();
 
         let sig_key: SignalKey = self.signals.insert(sig);
         self.signals_order.push(sig_key);
 
+        // add the signal within current message
         if let Some(m) = self.messages.get_mut(msg_key) {
             if !m.signals.contains(&sig_key) {
                 m.signals.push(sig_key);
             }
         }
 
+        // --- update message multiplexing info ---
+        match mux_role {
+            MuxRole::None => { /* Nothing to do */ }
+            MuxRole::Multiplexor => {
+                // Register the Multiplexor inside proper message list
+                if let Some(m) = self.get_message_by_key_mut(msg_key) {
+                    if !m.mux_multiplexors.contains(&sig_key) {
+                        m.mux_multiplexors.push(sig_key);
+                    }
+                }
+
+                // link dependant signals with no Multiplexor yet to this new Multiplexor
+                // Usually, this should never happen because Multiplexor must always be first line in a message
+                let dep_to_attach: Vec<(SignalKey, Vec<MuxSelector>)> = {
+                    let msg: &MessageDB = self.get_message_by_key(msg_key).unwrap();
+                    msg.signals
+                        .iter()
+                        .copied()
+                        .filter_map(|sk| {
+                            let s = self.get_sig_by_key(sk)?;
+                            let mi = s.mux.as_ref()?;
+                            if mi.role == MuxRole::Multiplexed && mi.switch.is_none() {
+                                Some((sk, mi.selectors.clone()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                };
+
+                // Update the signals and the mux_cases
+                for (sk, sels) in dep_to_attach {
+                    // set the Multiplexor to the signal
+                    if let Some(s) = self.get_sig_by_key_mut(sk) {
+                        if let Some(mi) = s.mux.as_mut() {
+                            if mi.role == MuxRole::Multiplexor && mi.switch.is_none() {
+                                mi.switch = Some(sig_key);
+                            }
+                        }
+                    }
+                    // Update the map of the message
+                    if let Some(m) = self.get_message_by_key_mut(msg_key) {
+                        let by_sel = m.mux_cases.entry(sig_key).or_default();
+                        for sel in &sels {
+                            by_sel.entry(sel.clone()).or_default().push(sk);
+                        }
+                    }
+                }
+            }
+            MuxRole::Multiplexed => {
+                if let Some(sw) = inferred_switch {
+                    if let Some(m) = self.get_message_by_key_mut(msg_key) {
+                        let by_sel = m.mux_cases.entry(sw).or_default();
+                        for sel in mux_selectors {
+                            by_sel.entry(sel.clone()).or_default().push(sig_key);
+                        }
+                    }
+                }
+            }
+        }
+
         self.sig_key_by_name.insert(name.to_lowercase(), sig_key);
         sig_key
     }
-    
+
     pub fn get_sig_key_by_name(&self, name: &str) -> Option<SignalKey> {
         self.sig_key_by_name.get(&name.to_lowercase()).copied()
     }
@@ -401,22 +494,244 @@ impl Database {
     }
 
     // -------------- Sorting ---------------
-    /// Sort nodes_by_name
-    pub fn sort_nodes_by_name(&mut self) {
+    /// Sort nodes_by_name case insensitive
+    pub fn sort_db_nodes_by_name(&mut self) {
         self.nodes_order
             .sort_by_key(|&k| self.nodes.get(k).map(|n| n.name.to_ascii_lowercase()));
     }
 
     /// Sort messages_by_name case insensitive
-    pub fn sort_messages_by_name(&mut self) {
+    pub fn sort_db_messages_by_name(&mut self) {
         self.messages_order
             .sort_by_key(|&k| self.messages.get(k).map(|m| m.name.to_ascii_lowercase()));
     }
 
     /// Sort signals_by_name case insensitive
-    pub fn sort_signals_by_name(&mut self) {
+    pub fn sort_db_signals_by_name(&mut self) {
         self.signals_order
             .sort_by_key(|&k| self.signals.get(k).map(|s| s.name.to_ascii_lowercase()));
+    }
+
+    /// Sort `messages_sent`, `signals_sent` and `signals_read` inside the specific given NodeDB
+    /// by the target names (ASCII case-insensitive).
+    pub fn sort_node_fields(&mut self, node_key: NodeKey) {
+        // Compute the new order on immutable borrows
+        let (sorted_msgs, sorted_sigs_sent, sorted_sigs_received) = {
+            let Some(node) = self.get_node_by_key(node_key) else {
+                return;
+            };
+
+            // messages_sent -> by MessageDB.name
+            let mut ms: Vec<MessageKey> = node.messages_sent.clone();
+            ms.sort_by_key(|&mk| {
+                self.get_message_by_key(mk)
+                    .map(|m| m.name.to_ascii_lowercase())
+                    .unwrap_or_default()
+            });
+
+            // signals_sent -> by SignalDB.name
+            let mut sr1: Vec<SignalKey> = node.signals_sent.clone();
+            sr1.sort_by_key(|&sk| {
+                self.get_sig_by_key(sk)
+                    .map(|s| s.name.to_ascii_lowercase())
+                    .unwrap_or_default()
+            });
+
+            // signals_read -> by SignalDB.name
+            let mut sr2: Vec<SignalKey> = node.signals_read.clone();
+            sr2.sort_by_key(|&sk| {
+                self.get_sig_by_key(sk)
+                    .map(|s| s.name.to_ascii_lowercase())
+                    .unwrap_or_default()
+            });
+
+            (ms, sr1, sr2)
+        };
+
+        // Write back with a mutable borrow
+        if let Some(node) = self.get_node_by_key_mut(node_key) {
+            node.messages_sent = sorted_msgs;
+            node.signals_sent = sorted_sigs_sent;
+            node.signals_read = sorted_sigs_received;
+        }
+    }
+
+    /// Sort `sender_nodes` and `signals` inside the specific given MessageDB
+    /// by the target names (ASCII case-insensitive).
+    pub fn sort_message_fields(&mut self, msg_key: MessageKey) {
+        let (sorted_nodes, sorted_sigs) = {
+            let Some(msg) = self.get_message_by_key(msg_key) else {
+                return;
+            };
+
+            // sender_nodes -> by NodeDB.name
+            let mut ns: Vec<NodeKey> = msg.sender_nodes.clone();
+            ns.sort_by_key(|&nk| {
+                self.get_node_by_key(nk)
+                    .map(|n| n.name.to_ascii_lowercase())
+                    .unwrap_or_default()
+            });
+
+            // signals -> by SignalDB.name
+            let mut ss: Vec<SignalKey> = msg.signals.clone();
+            ss.sort_by_key(|&sk| {
+                self.get_sig_by_key(sk)
+                    .map(|s| s.name.to_ascii_lowercase())
+                    .unwrap_or_default()
+            });
+
+            (ns, ss)
+        };
+
+        if let Some(msg) = self.get_message_by_key_mut(msg_key) {
+            msg.sender_nodes = sorted_nodes;
+            msg.signals = sorted_sigs;
+        }
+    }
+
+    /// Sort `receiver_nodes` inside the specific given SignalDB
+    /// by the target names (ASCII case-insensitive).
+    pub fn sort_signal_fields(&mut self, sig_key: SignalKey) {
+        let sorted_nodes: Vec<NodeKey> = {
+            let Some(sig) = self.get_sig_by_key(sig_key) else {
+                return;
+            };
+
+            // receiver_nodes -> by NodeDB.name
+            let mut ns: Vec<NodeKey> = sig.receiver_nodes.clone();
+            ns.sort_by_key(|&nk| {
+                self.get_node_by_key(nk)
+                    .map(|n| n.name.to_ascii_lowercase())
+                    .unwrap_or_default()
+            });
+
+            ns
+        };
+
+        if let Some(sig) = self.get_sig_by_key_mut(sig_key) {
+            sig.receiver_nodes = sorted_nodes;
+        }
+    }
+
+    /// For ALL NodeDB entries, sort:
+    /// - `messages_sent`  by the target MessageDB.name (ASCII case-insensitive)
+    /// - `signals_sent`  by the target MessageDB.name (ASCII case-insensitive)
+    /// - `signals_read`   by the target SignalDB.name  (ASCII case-insensitive)
+    ///
+    /// Missing/invalid keys are pushed to the end; ties are broken by the key for determinism.
+    pub fn sort_all_node_fields(&mut self) {
+        // Build write plans using only immutable borrows (avoids borrow conflicts).
+        let plans: Vec<NodePlan> = self.nodes.iter().map(|(nk, node)| {
+            // messages_sent -> sort by message name (case-insensitive)
+            let mut ms: Vec<MessageKey> = node.messages_sent.clone();
+            ms.sort_by_cached_key(|&mk| {
+                let (missing, name) = match self.get_message_by_key(mk) {
+                    Some(m) => (false, m.name.to_ascii_lowercase()),
+                    None => (true, String::new()),
+                };
+                (missing, name, mk) // missing last, then by lowercase name, then key as tie-breaker
+            });
+
+            // signals_sent -> sort by signal name (case-insensitive)
+            let mut sr1: Vec<SignalKey> = node.signals_sent.clone();
+            sr1.sort_by_cached_key(|&sk| {
+                let (missing, name) = match self.get_sig_by_key(sk) {
+                    Some(s) => (false, s.name.to_ascii_lowercase()),
+                    None => (true, String::new()),
+                };
+                (missing, name, sk)
+            });
+
+            // signals_read -> sort by signal name (case-insensitive)
+            let mut sr2: Vec<SignalKey> = node.signals_read.clone();
+            sr2.sort_by_cached_key(|&sk| {
+                let (missing, name) = match self.get_sig_by_key(sk) {
+                    Some(s) => (false, s.name.to_ascii_lowercase()),
+                    None => (true, String::new()),
+                };
+                (missing, name, sk)
+            });
+            NodePlan { nk, messages_sent: ms, signals_sent: sr1, signals_read: sr2 }
+        }).collect();
+
+        // Apply the plans with mutable borrows.
+        for p in plans {
+            if let Some(node) = self.get_node_by_key_mut(p.nk) {
+                node.messages_sent = p.messages_sent;
+                node.signals_sent = p.signals_sent;
+                node.signals_read = p.signals_read;
+            }
+        }
+    }
+
+    /// For ALL MessageDB entries, sort:
+    /// - `sender_nodes` by NodeDB.name    (ASCII case-insensitive)
+    /// - `signals`      by SignalDB.name  (ASCII case-insensitive)
+    ///
+    /// Missing/invalid keys are pushed to the end; ties are broken by the key.
+    pub fn sort_all_message_fields(&mut self) {
+        let plans: Vec<(MessageKey, Vec<NodeKey>, Vec<SignalKey>)> = self
+            .messages
+            .iter()
+            .map(|(mk, msg)| {
+                // sender_nodes -> sort by node name (case-insensitive)
+                let mut ns = msg.sender_nodes.clone();
+                ns.sort_by_cached_key(|&nk| {
+                    let (missing, name) = match self.get_node_by_key(nk) {
+                        Some(n) => (false, n.name.to_ascii_lowercase()),
+                        None => (true, String::new()),
+                    };
+                    (missing, name, nk)
+                });
+
+                // signals -> sort by signal name (case-insensitive)
+                let mut ss = msg.signals.clone();
+                ss.sort_by_cached_key(|&sk| {
+                    let (missing, name) = match self.get_sig_by_key(sk) {
+                        Some(s) => (false, s.name.to_ascii_lowercase()),
+                        None => (true, String::new()),
+                    };
+                    (missing, name, sk)
+                });
+
+                (mk, ns, ss)
+            })
+            .collect();
+
+        for (mk, ns, ss) in plans {
+            if let Some(msg) = self.get_message_by_key_mut(mk) {
+                msg.sender_nodes = ns;
+                msg.signals = ss;
+            }
+        }
+    }
+
+    /// For ALL SignalDB entries, sort:
+    /// - `receiver_nodes` by NodeDB.name (ASCII case-insensitive)
+    ///
+    /// Missing/invalid keys are pushed to the end; ties are broken by the key.
+    pub fn sort_all_signal_fields(&mut self) {
+        let plans: Vec<(SignalKey, Vec<NodeKey>)> = self
+            .signals
+            .iter()
+            .map(|(sk, sig)| {
+                let mut ns = sig.receiver_nodes.clone();
+                ns.sort_by_cached_key(|&nk| {
+                    let (missing, name) = match self.get_node_by_key(nk) {
+                        Some(n) => (false, n.name.to_ascii_lowercase()),
+                        None => (true, String::new()),
+                    };
+                    (missing, name, nk)
+                });
+                (sk, ns)
+            })
+            .collect();
+
+        for (sk, ns) in plans {
+            if let Some(sig) = self.get_sig_by_key_mut(sk) {
+                sig.receiver_nodes = ns;
+            }
+        }
     }
 
     /// Clear the database
@@ -457,8 +772,11 @@ impl BusType {
     }
 }
 
-
-fn cmp_ascii_ci(a: &str, b: &str) -> Ordering {
-    a.as_bytes().iter().map(u8::to_ascii_lowercase)
-        .cmp(b.as_bytes().iter().map(u8::to_ascii_lowercase))
+// suport struct for node parsing
+#[derive(Debug, Clone)]
+struct NodePlan {
+    nk: NodeKey,
+    messages_sent: Vec<MessageKey>,
+    signals_sent: Vec<SignalKey>,
+    signals_read: Vec<SignalKey>,
 }

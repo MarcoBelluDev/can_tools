@@ -1,4 +1,4 @@
-use crate::{Database, MessageKey, NodeDB, NodeKey, SignalLog, MuxInfo};
+use crate::{Database, MessageKey, MuxInfo, NodeDB, NodeKey, SignalLog};
 use std::collections::HashMap;
 
 /// Elementary step for extracting a bit field from a payload.

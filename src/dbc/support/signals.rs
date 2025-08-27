@@ -1,9 +1,9 @@
-use crate::{Database, MessageDB, NodeKey, SignalKey};
+use crate::{Database, MessageDB, MuxRole, MuxSelector, NodeKey, SignalKey};
 use std::collections::HashMap;
 
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
 /// Format (typical):
-/// SG_ <name> : <bit_start>|<bit_length>@<endian><sign> (<factor>,<offset>) [<min>|<max>] "<unit>" <receivers...>
+/// SG_ <name> [M|mX]: <bit_start>|<bit_length>@<endian><sign> (<factor>,<offset>) [<min>|<max>] "<unit>" <receivers...>
 pub(crate) fn decode(db: &mut Database, line: &str) {
     if db.messages.is_empty() {
         return;
@@ -11,18 +11,36 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
 
     let line: &str = line.trim_start();
     let mut split_colon = line.splitn(2, ':');
-    let left: &str = split_colon.next().unwrap().trim(); // "SG_ NAME"
+    let left: &str = split_colon.next().unwrap().trim(); // "SG_ NAME [M|mX]"
     let right: &str = split_colon.next().unwrap_or("").trim();
 
-    let name: String = left
-        .split_ascii_whitespace()
-        .nth(1)
-        .unwrap_or("")
-        .to_string();
+    // Left part analysis SG_ NAME [M|mX]
+    let mut left_it = left.split_ascii_whitespace();
+    let _sg: &str = left_it.next().unwrap_or(""); // "SG_"
+    let name_token: &str = left_it.next().unwrap_or("");
+    let after_name: &str = left_it.next().unwrap_or(""); // può essere "", "M", "m0", ecc.
+
+    let name: String = name_token.to_string();
     if name.is_empty() {
         return;
     }
 
+    // multiplexing tag decoding (if present)
+    let mut mux_role: MuxRole = MuxRole::None;
+    let mut mux_selectors: Vec<MuxSelector> = Vec::new();
+    if !after_name.is_empty() {
+        let tag: &str = after_name.trim_end_matches(':');
+        if tag == "M" {
+            mux_role = MuxRole::Multiplexor;
+        } else if let Some(rest) = tag.strip_prefix('m') {
+            if let Ok(v) = rest.parse::<u32>() {
+                mux_role = MuxRole::Multiplexed;
+                mux_selectors.push(MuxSelector::Value(v));
+            }
+        }
+    }
+
+    // right part analysis <bit_start>|<bit_length>@<endian><sign> (<factor>,<offset>) [<min>|<max>] "<unit>" <receivers...>
     let mut it = right.split_ascii_whitespace();
 
     // 1) bit info: "63|1@1+"
@@ -94,7 +112,7 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         Some(next_tok_cache.as_str())
     };
     let unit_raw: &str = unit_token.unwrap_or("").trim();
-    let unit: String = if unit_raw.starts_with('"') {
+    let unit_of_measurement: String = if unit_raw.starts_with('"') {
         // gather full quoted
         let mut acc: String = String::from(unit_raw);
         while !acc.ends_with('"') {
@@ -110,6 +128,11 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         unit_raw.trim_matches('"').to_string()
     };
 
+    let unit: String = unit_of_measurement
+        .strip_prefix("Unit_")
+        .unwrap_or(&unit_of_measurement)
+        .to_string();
+
     // 5) receivers (space-separated)
     let mut receiver_nodes: Vec<NodeKey> = Vec::new();
 
@@ -119,12 +142,12 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         .map(|s| s.trim().trim_matches(|c| c == ',' || c == ';')) // remove trailing commas/semicolons
         .filter(|s| !s.is_empty())
     {
-        if let Some(rif) = db.get_node_key_by_name(name) {
-            receiver_nodes.push(rif);
+        if let Some(key) = db.get_node_key_by_name(name) {
+            receiver_nodes.push(key);
         }
     }
 
-    let sig_rif: SignalKey = db.add_signal_if_absent(
+    let sig_key: SignalKey = db.add_signal_if_absent(
         &name,
         bit_start,
         bit_length,
@@ -135,14 +158,16 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         min,
         max,
         &unit,
-        receiver_nodes,
+        receiver_nodes.clone(),
+        mux_role,
+        &mux_selectors,
     );
 
-    // link the signal to current message
-    if let Some(msg_key) = db.current_msg {
-        if let Some(msg) = db.messages.get_mut(msg_key) {
-            if !msg.signals.contains(&sig_rif) {
-                msg.signals.push(sig_rif);
+    // Back-link: for each receiver node, add this SignalKey in the signals_read vector
+    for nk in receiver_nodes {
+        if let Some(node) = db.get_node_by_key_mut(nk) {
+            if !node.signals_read.contains(&sig_key) {
+                node.signals_read.push(sig_key);
             }
         }
     }

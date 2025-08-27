@@ -125,11 +125,6 @@ pub(crate) fn parse(
                     let key: String = build_sig_key(channel, &id, &s.name);
                     let idx = *chart_by_key.entry(key.clone()).or_insert_with(|| {
                         let i = log.signals.len();
-                        let unit_norm = s
-                            .unit_of_measurement
-                            .strip_prefix("Unit_")
-                            .unwrap_or(&s.unit_of_measurement)
-                            .to_string();
                         log.signals.push(SignalLog {
                             message: 0, // set below
                             name: s.name.clone(),
@@ -138,7 +133,7 @@ pub(crate) fn parse(
                             channel,
                             raw: sigf.raw,
                             value: sigf.value,
-                            unit: unit_norm,
+                            unit: s.unit_of_measurement.clone(),
                             text: sigf.text.clone(),
                             comment: s.comment.clone(),
                             value_table: s.value_table.clone(),

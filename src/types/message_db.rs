@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::{Database, NodeKey, SignalDB, SignalKey};
+use std::collections::HashMap;
 
 /// CAN message defined in the database (DBC/ARXML).
 ///
@@ -29,11 +29,11 @@ pub struct MessageDB {
     /// Associated comment (DBC `CM_ BO_` section).
     pub comment: String,
     /// List of multiplexer switch signals (primary first). Empty if none.
-    pub mux_switches: Vec<SignalKey>,
+    pub mux_multiplexors: Vec<SignalKey>,
 
-    /// Fast lookup: for each switch -> for each selector -> signals gated by that selector.
+    /// Fast lookup: for each Multiplexer -> for each selector -> signals gated by that selector.
     ///
-    /// Example: mux_cases[POS_MUX][Value(0)] = [POS_PosStati, POS_LatDirection, ...]
+    /// Example: mux_cases[Motor_MUX][Value(0)] = [Motor_status, Motor_Direction, ...]
     pub mux_cases: HashMap<SignalKey, HashMap<MuxSelector, Vec<SignalKey>>>,
 }
 
@@ -59,7 +59,7 @@ impl MessageDB {
     }
 }
 
-#[derive(Default, Clone, PartialEq, Debug)]
+#[derive(Default, Copy, Clone, PartialEq, Debug)]
 pub enum IdFormat {
     #[default]
     Standard,
@@ -82,9 +82,9 @@ pub enum MuxRole {
     #[default]
     None,
     /// This signal is the multiplexer switch (marked as `M` in DBC).
-    Switch,
-    /// This signal is gated by a multiplexer value (marked as `mX` / `SG_MUL_VAL_`).
-    Dependent,
+    Multiplexor,
+    /// This signal is gated by a multiplexer value (marked as `mX`).
+    Multiplexed,
 }
 
 /// A selector for multiplexed signals: either a single value or a closed range.
@@ -107,4 +107,14 @@ pub struct MuxInfo {
     pub switch: Option<SignalKey>,
     /// For `Dependent` signals, the allowed selectors (values/ranges). Empty otherwise.
     pub selectors: Vec<MuxSelector>,
+}
+
+impl MuxInfo {
+    pub fn role_to_string(&self) -> String {
+        match self.role {
+            MuxRole::None => "None".to_string(),
+            MuxRole::Multiplexed => "Multiplexed".to_string(),
+            MuxRole::Multiplexor => "Multiplexor".to_string(),
+        }
+    }
 }

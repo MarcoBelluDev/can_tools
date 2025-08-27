@@ -25,7 +25,7 @@ pub use crate::types::{
     absolute_time::AbsoluteTime,
     canlog::{CanFrame, CanLog, MessageLog, SignalLog},
     database::{BusType, Database, MessageKey, NodeKey, Present, SignalKey},
-    message_db::{IdFormat, MessageDB, MuxRole, MuxSelector, MuxInfo},
+    message_db::{IdFormat, MessageDB, MuxInfo, MuxRole, MuxSelector},
     node_db::NodeDB,
     signal_db::SignalDB,
 };
