@@ -105,7 +105,7 @@ pub fn from_file(path: &str) -> Result<Database, String> {
                 support::nodes::add_info(&mut db, s);
             } else if third == "BO_" {
                 // additional message info
-                support::messages::cycle_time(&mut db, s);
+                support::messages::add_info(&mut db, s);
             } else if third == "SG_" {
                 // additinoal signal info
             } else {

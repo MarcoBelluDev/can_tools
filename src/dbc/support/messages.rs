@@ -1,4 +1,4 @@
-use crate::types::database::{Database, NodeKey};
+use crate::types::{database::{Database, NodeKey}, message_db::GenMsgSendType};
 
 const CAN_EFF_MASK: u32 = 0x1FFF_FFFF; // 29 bit
 const CAN_SFF_MASK: u32 = 0x0000_07FF; // 11 bit
@@ -145,26 +145,47 @@ pub(crate) fn comments(db: &mut Database, line: &str) {
     }
 }
 
-/// `BA_ "GenMsgCycleTime" BO_ <ID> <ms>;`
-pub(crate) fn cycle_time(db: &mut Database, line: &str) {
-    if !line.contains("GenMsgCycleTime") {
-        return;
-    }
+/// `BA_ "Attribute" BO_ <ID> <value>;`
+pub(crate) fn add_info(db: &mut Database, line: &str) {
     let mut parts = line.split_ascii_whitespace();
     parts.next(); // BA_
-    parts.next(); // "GenMsgCycleTime"
-    if parts.next() != Some("BO_") {
-        return;
-    }
+    let attribute: &str = match parts.next() {
+        Some(a) => a.trim_matches('"'),
+        None => return,
+    };
 
-    let id: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    if id == 0 {
-        return;
-    }
+    match attribute {
+        "GenMsgCycleTime" => {
+            parts.next(); // BO_
+            let id: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            if id == 0 {
+                return;
+            }
 
-    if let Some(ct_str) = parts.next() {
-        if let Some(msg) = db.get_message_by_id_mut(id) {
-            msg.cycle_time = ct_str.trim_end_matches(';').parse::<u16>().unwrap_or(0);
-        }
+            if let Some(value) = parts.next() {
+                if let Some(msg) = db.get_message_by_id_mut(id) {
+                    msg.cycle_time = value.trim_end_matches(';').parse::<u16>().unwrap_or(0);
+                }
+            }
+        },
+        "GenMsgSendType" => {
+            parts.next(); // BO_
+            let id: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            if id == 0 {
+                return;
+            }
+
+            if let Some(value) = parts.next() {
+                if let Some(msg) = db.get_message_by_id_mut(id) {
+                    match value {
+                        "0" => msg.tx_method = GenMsgSendType::Cyclic,
+                        "7" => msg.tx_method = GenMsgSendType::IfActive,
+                        "8" => msg.tx_method = GenMsgSendType::NoMsgSendType,
+                        _ => msg.tx_method = GenMsgSendType::NotUsed,
+                    }
+                }
+            }
+        },
+        _ => {},
     }
 }

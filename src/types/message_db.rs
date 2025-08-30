@@ -20,6 +20,8 @@ pub struct MessageDB {
     pub byte_length: u16,
     /// Message type (free-form; if present in the DBC).
     pub msgtype: String,
+    /// TX Method: Cycle, Not Used, IfActive, NoMsgSendType
+    pub tx_method: GenMsgSendType,
     /// Cycle time in milliseconds (if defined; 0 if unknown).
     pub cycle_time: u16,
     /// Transmitting nodes (ECUs) for this message.
@@ -117,4 +119,13 @@ impl MuxInfo {
             MuxRole::Multiplexor => "Multiplexor".to_string(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum GenMsgSendType {
+    Cyclic,         // 0
+    NotUsed,        // da 0 a 6
+    IfActive,       // 7
+    #[default]
+    NoMsgSendType   // 8
 }

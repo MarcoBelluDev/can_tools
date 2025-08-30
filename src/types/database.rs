@@ -16,7 +16,7 @@
 use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
 
-use crate::{IdFormat, MessageDB, MuxInfo, MuxRole, MuxSelector, NodeDB, SignalDB};
+use crate::{types::message_db::GenMsgSendType, IdFormat, MessageDB, MuxInfo, MuxRole, MuxSelector, NodeDB, SignalDB};
 
 // --- Stable keys (SlotMap) ---
 new_key_type! { pub struct NodeKey; }
@@ -215,6 +215,7 @@ impl Database {
             } else {
                 "CAN FD".into()
             },
+            tx_method: GenMsgSendType::NoMsgSendType,
             cycle_time: 0,
             sender_nodes: sender_node_id.into_iter().collect(),
             signals: Vec::new(),
