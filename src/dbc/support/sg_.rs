@@ -1,5 +1,4 @@
-use crate::{Database, MessageDB, MuxRole, MuxSelector, NodeKey, SignalKey};
-use std::collections::HashMap;
+use crate::{Database, MuxRole, MuxSelector, NodeKey, SignalKey};
 
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
 /// Format (typical):
@@ -168,107 +167,6 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         if let Some(node) = db.get_node_by_key_mut(nk) {
             if !node.signals_read.contains(&sig_key) {
                 node.signals_read.push(sig_key);
-            }
-        }
-    }
-}
-
-/// Parse a signal-level comment:
-/// `CM_ SG_ <MessageID> <SignalName> "Comment...";`
-pub(crate) fn comments(db: &mut Database, text: &str) {
-    let lower: String = text.to_ascii_lowercase();
-    if !lower.starts_with("cm_ sg_") {
-        return;
-    }
-    let parts: Vec<&str> = text.split_ascii_whitespace().collect();
-    if parts.len() < 4 {
-        return;
-    }
-    let message_id: u32 = parts[2].parse::<u32>().unwrap_or(0);
-    let signal_name: &str = parts[3].trim_matches('"'); // usually not quoted here
-
-    // Risolvi il SignalKey cercando per nome *dentro il messaggio*,
-    // ma chiudi il borrow immutabile di `db` in questo blocco.
-    let sig_key_opt: Option<SignalKey> = {
-        let msg: &MessageDB = match db.get_message_by_id(message_id) {
-            Some(m) => m,
-            None => return,
-        };
-
-        msg.signals.iter().copied().find(|&sig_key| {
-            db.get_sig_by_key(sig_key)
-                .is_some_and(|s| s.name.eq_ignore_ascii_case(signal_name))
-        })
-    };
-
-    // Ora puoi prendere un borrow mutabile di `db` per aggiornare il commento.
-    if let Some(sig_key) = sig_key_opt {
-        if let Some(s) = db.get_sig_by_key_mut(sig_key) {
-            if let (Some(first), Some(last)) = (text.find('"'), text.rfind('"')) {
-                if last > first {
-                    s.comment = text[first + 1..last].to_string();
-                }
-            }
-        }
-    }
-}
-
-/// Parse a VAL_ line that defines a value table for a specific signal:
-/// `VAL_ <MessageID> <SignalName> <value> "<desc>" ... ;`
-pub(crate) fn value_table(db: &mut Database, line: &str) {
-    let mut tokens = line.split_ascii_whitespace();
-    if tokens.next().map(|s| s.to_ascii_lowercase()) != Some("val_".into()) {
-        return;
-    }
-    let message_id: u32 = tokens
-        .next()
-        .and_then(|t| t.parse::<u32>().ok())
-        .unwrap_or(0);
-    let signal_name = match tokens.next() {
-        Some(n) => n,
-        None => return,
-    };
-
-    // Collect pairs: numeric value followed by quoted description
-    let mut table: HashMap<i32, String> = HashMap::new();
-    let mut t = tokens.peekable();
-    while let Some(val_tok) = t.next() {
-        if val_tok.ends_with(';') {
-            break;
-        } // sanity
-        let val = match val_tok.parse::<i32>() {
-            Ok(v) => v,
-            Err(_) => break,
-        };
-        // desc may be a multi-token quoted string
-        let mut desc = String::new();
-        if let Some(d) = t.next() {
-            if d.starts_with('"') {
-                desc.push_str(d);
-                while !desc.ends_with('"') {
-                    if let Some(nxt) = t.next() {
-                        desc.push(' ');
-                        desc.push_str(nxt);
-                    } else {
-                        break;
-                    }
-                }
-                desc = desc.trim_matches('"').to_string();
-            } else {
-                // unexpected token; stop
-                break;
-            }
-        }
-        table.insert(val, desc);
-    }
-
-    if let Some(msg) = db.get_message_by_id(message_id) {
-        if let Some(&sig_key) = msg.signals.iter().find(|&&sig_key| {
-            db.get_sig_by_key(sig_key)
-                .is_some_and(|s| s.name == signal_name)
-        }) {
-            if let Some(s) = db.get_sig_by_key_mut(sig_key) {
-                s.value_table = table;
             }
         }
     }

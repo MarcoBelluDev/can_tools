@@ -1,4 +1,5 @@
 use crate::dbc::support;
+use crate::dbc::support::strings::{accumulate_until_two_unescaped_quotes, has_complete_quoted_segment};
 use crate::types::database::Database;
 
 use std::fs::File;
@@ -82,132 +83,78 @@ pub fn from_file(path: &str) -> Result<Database, String> {
 
     while i < lines.len() {
         // Work on a trimmed-start slice to preserve inner spaces
-        let s: &str = lines[i].trim_start();
+        let line: &str = lines[i].trim_start();
 
         // skip comments and empty lines
-        if s.is_empty() || s.starts_with("//") {
+        if line.is_empty() || line.starts_with("//") {
             i += 1;
             continue;
         }
 
-        // Extract first token (keyword) without allocating
-        let mut it = s.split_ascii_whitespace();
-        let tok: &str = it.next().unwrap_or("");
+        // Extract first, second and third part from the line
+        let mut parts = line.split_ascii_whitespace();
+        let first: &str = parts.next().unwrap_or("");
+        let second: &str = parts.next().unwrap_or("");
+        let third: &str = parts.next().unwrap_or("");
 
-        if tok.eq_ignore_ascii_case("VERSION") {
-            support::version::decode(&mut db, s);
-        } else if tok.eq_ignore_ascii_case("BA_") {
-            // Third part must be used to check where the line must be analyzed
-            it.next();
-            let third: &str = it.next().unwrap_or("");
-            if third == "BU_" {
-                // additional node info
-                support::nodes::add_info(&mut db, s);
-            } else if third == "BO_" {
-                // additional message info
-                support::messages::add_info(&mut db, s);
-            } else if third == "SG_" {
-                // additinoal signal info
-            } else {
-                // additional database info
-                support::basic_info::decode(&mut db, s);
-            }
-        } else if tok.eq_ignore_ascii_case("BU_") {
-            support::nodes::decode(&mut db, s);
-        } else if tok.eq_ignore_ascii_case("BO_") {
-            support::messages::decode(&mut db, s);
-        } else if tok.eq_ignore_ascii_case("SG_") {
-            support::signals::decode(&mut db, s);
-        } else if tok.eq_ignore_ascii_case("BO_TX_BU_") {
-            support::messages::tx_nodes(&mut db, s);
-        } else if tok.eq_ignore_ascii_case("CM_") {
-            // Second token determines target: "…", BO_, SG_, BU_
-            let second: &str = it.next().unwrap_or("");
-            if second.starts_with('"') {
-                // Network/global comment: CM_ "…";
-                support::basic_info::comment(&mut db, s);
-            } else if second.eq_ignore_ascii_case("BO_") {
-                support::messages::comments(&mut db, s);
-            } else if second.eq_ignore_ascii_case("SG_") {
-                // Accumulate multiline until at least two quotes (very common in DBC)
-                let mut full_comment_line: String = s.to_string();
-                while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
-                    i += 1;
-                    full_comment_line.push('\n');
-                    full_comment_line.push_str(lines[i].trim());
+        match first {
+            "VERSION" => {
+                support::version::decode(&mut db, line);
+            },
+            "BA_" => {
+                if third == "BU_" {
+                    support::ba_bu_::decode(&mut db, line);
+                } else if third == "BO_" {
+                    support::ba_bo_::decode(&mut db, line);
+                } else if third == "SG_" {
+                } else {
+                    support::ba_::decode(&mut db, line);
                 }
-                support::signals::comments(&mut db, &full_comment_line);
-            } else if second.eq_ignore_ascii_case("BU_") {
-                let mut full_comment_line: String = s.to_string();
-                while full_comment_line.matches('"').count() < 2 && i + 1 < lines.len() {
-                    i += 1;
-                    full_comment_line.push('\n');
-                    full_comment_line.push_str(lines[i].trim());
+            },
+            "BU_" => {
+                support::bu_::decode(&mut db, line);
+            },
+            "BO_" => {
+                support::bo_::decode(&mut db, line);
+            },
+            "SG_" => {
+                support::sg_::decode(&mut db, line);
+            },
+            "BO_TX_BU_" => {
+                support::bo_tx_bu_::decode(&mut db, line);
+            },
+            "CM_" => {
+                if second.starts_with('"') {
+                    // Network/global comment: CM_ "…";
+                    support::cm_::decode(&mut db, line);
+                } else if second == "BO_" {
+                    support::cm_bo_::decode(&mut db, line);
+                } else if second == "SG_" {
+                    // Accumulate multiline until the comment has two unescaped quotes
+                    let mut full_comment_line: String = line.to_string();
+                    if !has_complete_quoted_segment(&full_comment_line) {
+                        accumulate_until_two_unescaped_quotes(&mut full_comment_line, &lines, &mut i);
+                    }
+                    support::cm_sg_::decode(&mut db, &full_comment_line);
+                } else if second == "BU_" {
+                    let mut full_comment_line: String = line.to_string();
+                    if !has_complete_quoted_segment(&full_comment_line) {
+                        accumulate_until_two_unescaped_quotes(&mut full_comment_line, &lines, &mut i);
+                    }
+                    support::cm_bu_::decode(&mut db, &full_comment_line);
                 }
-                support::nodes::comments(&mut db, &full_comment_line);
-            }
-        } else if tok.eq_ignore_ascii_case("VAL_") {
-            support::signals::value_table(&mut db, s);
+            },
+            "VAL_" => {
+                support::val_::decode(&mut db, line);
+            },
+            _ => {},
         }
 
         i += 1;
     }
 
-    // Sanity checks with SlotMap: order keys exist and lookups point to valid entries
-    #[cfg(debug_assertions)]
-    {
-        debug_assert!(db.nodes_order.iter().all(|&k| db.nodes.contains_key(k)));
-        debug_assert!(
-            db.messages_order
-                .iter()
-                .all(|&k| db.messages.contains_key(k))
-        );
-        debug_assert!(db.signals_order.iter().all(|&k| db.signals.contains_key(k)));
-
-        debug_assert!(
-            db.node_key_by_name
-                .values()
-                .all(|&k| db.nodes.contains_key(k))
-        );
-        debug_assert!(
-            db.msg_key_by_id
-                .values()
-                .all(|&k| db.messages.contains_key(k))
-        );
-        debug_assert!(
-            db.msg_key_by_hex
-                .values()
-                .all(|&k| db.messages.contains_key(k))
-        );
-        debug_assert!(
-            db.msg_key_by_name
-                .values()
-                .all(|&k| db.messages.contains_key(k))
-        );
-        debug_assert!(
-            db.sig_key_by_name
-                .values()
-                .all(|&k| db.signals.contains_key(k))
-        );
-
-        debug_assert!(
-            db.messages
-                .values()
-                .all(|m| m.sender_nodes.iter().all(|&nk| db.nodes.contains_key(nk)))
-        );
-        debug_assert!(
-            db.messages
-                .values()
-                .all(|m| m.signals.iter().all(|&sk| db.signals.contains_key(sk)))
-        );
-        debug_assert!(
-            db.signals
-                .values()
-                .all(|s| db.messages.contains_key(s.message)
-                    && s.receiver_nodes.iter().all(|&nk| db.nodes.contains_key(nk)))
-        );
-    }
-
+    
+    // re-order
     db.sort_db_nodes_by_name();
     db.sort_db_messages_by_name();
     db.sort_db_signals_by_name();
