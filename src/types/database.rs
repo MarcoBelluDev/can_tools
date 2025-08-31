@@ -16,7 +16,10 @@
 use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
 
-use crate::{types::message_db::GenMsgSendType, IdFormat, MessageDB, MuxInfo, MuxRole, MuxSelector, NodeDB, SignalDB};
+use crate::{
+    IdFormat, MessageDB, MuxInfo, MuxRole, MuxSelector, NodeDB, SignalDB,
+    types::message_db::GenMsgSendType,
+};
 
 // --- Stable keys (SlotMap) ---
 new_key_type! { pub struct NodeKey; }
@@ -230,10 +233,10 @@ impl Database {
         self.msg_key_by_hex.insert(id_hex, msg_key);
         self.msg_key_by_name.insert(name.to_lowercase(), msg_key);
 
-        if let Some(nid) = sender_node_id {
-            if let Some(n) = self.nodes.get_mut(nid) {
-                n.messages_sent.push(msg_key);
-            }
+        if let Some(nid) = sender_node_id
+            && let Some(n) = self.nodes.get_mut(nid)
+        {
+            n.messages_sent.push(msg_key);
         }
 
         self.current_msg = Some(msg_key);
@@ -382,10 +385,10 @@ impl Database {
         self.signals_order.push(sig_key);
 
         // add the signal within current message
-        if let Some(m) = self.messages.get_mut(msg_key) {
-            if !m.signals.contains(&sig_key) {
-                m.signals.push(sig_key);
-            }
+        if let Some(m) = self.messages.get_mut(msg_key)
+            && !m.signals.contains(&sig_key)
+        {
+            m.signals.push(sig_key);
         }
 
         // --- update message multiplexing info ---
@@ -393,10 +396,10 @@ impl Database {
             MuxRole::None => { /* Nothing to do */ }
             MuxRole::Multiplexor => {
                 // Register the Multiplexor inside proper message list
-                if let Some(m) = self.get_message_by_key_mut(msg_key) {
-                    if !m.mux_multiplexors.contains(&sig_key) {
-                        m.mux_multiplexors.push(sig_key);
-                    }
+                if let Some(m) = self.get_message_by_key_mut(msg_key)
+                    && !m.mux_multiplexors.contains(&sig_key)
+                {
+                    m.mux_multiplexors.push(sig_key);
                 }
 
                 // link dependant signals with no Multiplexor yet to this new Multiplexor
@@ -421,12 +424,12 @@ impl Database {
                 // Update the signals and the mux_cases
                 for (sk, sels) in dep_to_attach {
                     // set the Multiplexor to the signal
-                    if let Some(s) = self.get_sig_by_key_mut(sk) {
-                        if let Some(mi) = s.mux.as_mut() {
-                            if mi.role == MuxRole::Multiplexor && mi.switch.is_none() {
-                                mi.switch = Some(sig_key);
-                            }
-                        }
+                    if let Some(s) = self.get_sig_by_key_mut(sk)
+                        && let Some(mi) = s.mux.as_mut()
+                        && mi.role == MuxRole::Multiplexor
+                        && mi.switch.is_none()
+                    {
+                        mi.switch = Some(sig_key);
                     }
                     // Update the map of the message
                     if let Some(m) = self.get_message_by_key_mut(msg_key) {
@@ -438,12 +441,12 @@ impl Database {
                 }
             }
             MuxRole::Multiplexed => {
-                if let Some(sw) = inferred_switch {
-                    if let Some(m) = self.get_message_by_key_mut(msg_key) {
-                        let by_sel = m.mux_cases.entry(sw).or_default();
-                        for sel in mux_selectors {
-                            by_sel.entry(sel.clone()).or_default().push(sig_key);
-                        }
+                if let Some(sw) = inferred_switch
+                    && let Some(m) = self.get_message_by_key_mut(msg_key)
+                {
+                    let by_sel = m.mux_cases.entry(sw).or_default();
+                    for sel in mux_selectors {
+                        by_sel.entry(sel.clone()).or_default().push(sig_key);
                     }
                 }
             }
@@ -622,38 +625,47 @@ impl Database {
     /// Missing/invalid keys are pushed to the end; ties are broken by the key for determinism.
     pub fn sort_all_node_fields(&mut self) {
         // Build write plans using only immutable borrows (avoids borrow conflicts).
-        let plans: Vec<NodePlan> = self.nodes.iter().map(|(nk, node)| {
-            // messages_sent -> sort by message name (case-insensitive)
-            let mut ms: Vec<MessageKey> = node.messages_sent.clone();
-            ms.sort_by_cached_key(|&mk| {
-                let (missing, name) = match self.get_message_by_key(mk) {
-                    Some(m) => (false, m.name.to_ascii_lowercase()),
-                    None => (true, String::new()),
-                };
-                (missing, name, mk) // missing last, then by lowercase name, then key as tie-breaker
-            });
+        let plans: Vec<NodePlan> = self
+            .nodes
+            .iter()
+            .map(|(nk, node)| {
+                // messages_sent -> sort by message name (case-insensitive)
+                let mut ms: Vec<MessageKey> = node.messages_sent.clone();
+                ms.sort_by_cached_key(|&mk| {
+                    let (missing, name) = match self.get_message_by_key(mk) {
+                        Some(m) => (false, m.name.to_ascii_lowercase()),
+                        None => (true, String::new()),
+                    };
+                    (missing, name, mk) // missing last, then by lowercase name, then key as tie-breaker
+                });
 
-            // signals_sent -> sort by signal name (case-insensitive)
-            let mut sr1: Vec<SignalKey> = node.signals_sent.clone();
-            sr1.sort_by_cached_key(|&sk| {
-                let (missing, name) = match self.get_sig_by_key(sk) {
-                    Some(s) => (false, s.name.to_ascii_lowercase()),
-                    None => (true, String::new()),
-                };
-                (missing, name, sk)
-            });
+                // signals_sent -> sort by signal name (case-insensitive)
+                let mut sr1: Vec<SignalKey> = node.signals_sent.clone();
+                sr1.sort_by_cached_key(|&sk| {
+                    let (missing, name) = match self.get_sig_by_key(sk) {
+                        Some(s) => (false, s.name.to_ascii_lowercase()),
+                        None => (true, String::new()),
+                    };
+                    (missing, name, sk)
+                });
 
-            // signals_read -> sort by signal name (case-insensitive)
-            let mut sr2: Vec<SignalKey> = node.signals_read.clone();
-            sr2.sort_by_cached_key(|&sk| {
-                let (missing, name) = match self.get_sig_by_key(sk) {
-                    Some(s) => (false, s.name.to_ascii_lowercase()),
-                    None => (true, String::new()),
-                };
-                (missing, name, sk)
-            });
-            NodePlan { nk, messages_sent: ms, signals_sent: sr1, signals_read: sr2 }
-        }).collect();
+                // signals_read -> sort by signal name (case-insensitive)
+                let mut sr2: Vec<SignalKey> = node.signals_read.clone();
+                sr2.sort_by_cached_key(|&sk| {
+                    let (missing, name) = match self.get_sig_by_key(sk) {
+                        Some(s) => (false, s.name.to_ascii_lowercase()),
+                        None => (true, String::new()),
+                    };
+                    (missing, name, sk)
+                });
+                NodePlan {
+                    nk,
+                    messages_sent: ms,
+                    signals_sent: sr1,
+                    signals_read: sr2,
+                }
+            })
+            .collect();
 
         // Apply the plans with mutable borrows.
         for p in plans {

@@ -79,12 +79,10 @@ pub fn from_file(path: &str, db_list: &HashMap<u8, Database>) -> Result<CanLog, 
 
     // read .asc file line by line
     for line in reader.lines().map_while(Result::ok) {
-        if !found_abs_time {
-            if let Some(time) = support::abs_time::from_line(&line) {
-                log.absolute_time = time;
-                found_abs_time = true;
-                continue; // skip abs_time check for rest of the line
-            }
+        if !found_abs_time && let Some(time) = support::abs_time::from_line(&line) {
+            log.absolute_time = time;
+            found_abs_time = true;
+            continue; // skip abs_time check for rest of the line
         }
         support::line::parse(
             &line,

@@ -1,319 +1,214 @@
 use crate::types::database::{BusType, Database};
 
 pub(crate) fn decode(db: &mut Database, line: &str) {
-    // Expected formats:
+    // Expected formats (global BA_ attributes):
     // BA_ "DBName" "TestCAN";
     // BA_ "BusType" "CAN FD";
     // BA_ "Baudrate" 500000;
     // BA_ "BaudrateCANFD" 2000000;
+    // ...plus other attributes listed below.
 
-    if line.contains(r#""Baudrate""#) {
-        // BA_ "Baudrate" "500000";
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // Baudrate
-        if let Some(text) = parts.next() {
-            if let Ok(baudrate) = text.parse::<u32>() {
-                db.baudrate = baudrate;
-            }
-        }
-    } else if line.contains(r#""BusType""#) {
-        // Expected: BA_ "BusType" "CAN FD";
-        let s: &str = line.trim_end_matches(';').trim();
+    // Trim ending ';' and split by ASCII whitespace.
+    let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();
 
-        // After split by '"': [unquoted, "BusType", unquoted, "CAN FD", ...]
-        let mut quoted = s.split('"').skip(1).step_by(2);
-        if let (Some(key), Some(val)) = (quoted.next(), quoted.next()) {
-            if key.eq_ignore_ascii_case("BusType") {
-                db.bustype = if val == "CAN FD" {
-                    BusType::CanFd
-                } else {
-                    BusType::Can
-                }
+    // 1) "BA_"
+    match parts.next() {
+        Some("BA_") => {}
+        _ => return,
+    }
+
+    // 2) Attribute token (e.g., "\"DBName\"")
+    let attr_tok: &str = match parts.next() {
+        Some(a) => a,
+        None => return,
+    };
+    let attribute: &str = attr_tok.trim_matches('"');
+
+    // 3) Rebuild the remaining tail to preserve spaces inside quoted values
+    let rest_joined: String = parts.collect::<Vec<_>>().join(" ");
+    let rest: &str = rest_joined.trim();
+
+    // 4) Extract the value:
+    //    - if it starts with a quote => take content up to the next quote
+    //    - otherwise treat the remainder as the numeric value (already ';'-stripped)
+    let value: &str = if let Some(inner) = rest.strip_prefix('"') {
+        match inner.find('"') {
+            Some(end) => &inner[..end],
+            None => return, // unmatched quotes
+        }
+    } else {
+        rest
+    };
+
+    match attribute {
+        // ---- u32 fields ----
+        "Baudrate" => {
+            if let Ok(num) = value.parse::<u32>() {
+                db.baudrate = num;
             }
         }
-    } else if line.contains(r#""DBName""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // DBName
-        if let Some(text) = parts.next() {
-            db.name = text.trim_matches('"').to_string();
-        }
-    } else if line.contains(r#""BaudrateCANFD""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // BaudrateCANFD
-        if let Some(text) = parts.next() {
-            if let Ok(baudrate_canfd) = text.parse::<u32>() {
-                db.baudrate_canfd = baudrate_canfd;
+        "BaudrateCANFD" => {
+            if let Ok(num) = value.parse::<u32>() {
+                db.baudrate_canfd = num;
             }
         }
-    } else if line.contains(r#""NmhNStart""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhNStart
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u16>() {
-                db.nmh_n_start = number;
+        "NmhBaseAddress" => {
+            if let Ok(num) = value.parse::<u32>() {
+                db.nmh_base_address = num;
             }
         }
-    } else if line.contains(r#""NmhLongTimer""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhLongTimer
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u16>() {
-                db.nmh_long_timer = number;
+
+        // ---- u16 fields ----
+        "NmhNStart" => {
+            if let Ok(num) = value.parse::<u16>() {
+                db.nmh_n_start = num;
             }
         }
-    } else if line.contains(r#""NmhPrepareBusSleepTimer""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhPrepareBusSleepTimer
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u16>() {
-                db.nmh_prepare_bus_sleep_timer = number;
+        "NmhLongTimer" => {
+            if let Ok(num) = value.parse::<u16>() {
+                db.nmh_long_timer = num;
             }
         }
-    } else if line.contains(r#""NmhWaitBusSleepTimer""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhWaitBusSleepTimer
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u16>() {
-                db.nmh_wait_bus_sleep_timer = number;
+        "NmhPrepareBusSleepTimer" => {
+            if let Ok(num) = value.parse::<u16>() {
+                db.nmh_prepare_bus_sleep_timer = num;
             }
         }
-    } else if line.contains(r#""NmhTimeoutTimer""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhTimeoutTimer
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u16>() {
-                db.nmh_timeout_timer = number;
+        "NmhWaitBusSleepTimer" => {
+            if let Ok(num) = value.parse::<u16>() {
+                db.nmh_wait_bus_sleep_timer = num;
             }
         }
-    } else if line.contains(r#""NBTMax""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NBTMax
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.nmh_nbt_max = number;
+        "NmhTimeoutTimer" => {
+            if let Ok(num) = value.parse::<u16>() {
+                db.nmh_timeout_timer = num;
             }
         }
-    } else if line.contains(r#""NBTMin""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NBTMin
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.nmh_nbt_min = number;
+        "GenNWMSleepTime" => {
+            if let Ok(num) = value.parse::<u16>() {
+                db.gen_nwm_sleep_time = num;
             }
         }
-    } else if line.contains(r#""SyncJumpWidthMax""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // SyncJumpWidthMax
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.sync_jump_width_max = number;
+
+        // ---- u8 fields ----
+        "NBTMax" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.nmh_nbt_max = num;
             }
         }
-    } else if line.contains(r#""SyncJumpWidthMin""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // SyncJumpWidthMin
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.sync_jump_width_min = number;
+        "NBTMin" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.nmh_nbt_min = num;
             }
         }
-    } else if line.contains(r#""SamplePointMax""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // SamplePointMax
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.sample_point_max = number;
+        "SyncJumpWidthMax" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.sync_jump_width_max = num;
             }
         }
-    } else if line.contains(r#""SamplePointMin""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // SamplePointMin
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.sample_point_min = number;
+        "SyncJumpWidthMin" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.sync_jump_width_min = num;
             }
         }
-    } else if line.contains(r#""VersionNumber""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // VersionNumber
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.version_number = number;
+        "SamplePointMax" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.sample_point_max = num;
             }
         }
-    } else if line.contains(r#""VersionYear""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // VersionYear
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.version_year = number;
+        "SamplePointMin" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.sample_point_min = num;
             }
         }
-    } else if line.contains(r#""VersionWeek""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // VersionWeek
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.version_week = number;
+        "VersionNumber" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.version_number = num;
             }
         }
-    } else if line.contains(r#""VersionMonth""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // VersionMonth
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.version_month = number;
+        "VersionYear" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.version_year = num;
             }
         }
-    } else if line.contains(r#""VersionDay""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // VersionDay
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.version_day = number;
+        "VersionWeek" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.version_week = num;
             }
         }
-    } else if line.contains(r#""VAGTP20_SetupStartAddress""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // VAGTP20_SetupStartAddress
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.vagtp20_setup_start_address = number;
+        "VersionMonth" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.version_month = num;
             }
         }
-    } else if line.contains(r#""VAGTP20_SetupMessageCount""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // VAGTP20_SetupMessageCount
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.vagtp20_setup_message_count = number;
+        "VersionDay" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.version_day = num;
             }
         }
-    } else if line.contains(r#""NmType""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmType
-        if let Some(text) = parts.next() {
-            db.nm_type = text.trim_matches('"').to_string();
-        }
-    } else if line.contains(r#""NmhMessageCount""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhMessageCount
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u8>() {
-                db.nmh_message_count = number;
+        "VAGTP20_SetupStartAddress" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.vagtp20_setup_start_address = num;
             }
         }
-    } else if line.contains(r#""NmhBaseAddress""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhBaseAddress
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u32>() {
-                db.nmh_base_address = number;
+        "VAGTP20_SetupMessageCount" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.vagtp20_setup_message_count = num;
             }
         }
-    } else if line.contains(r#""Manufacturer""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // Manufacturer
-        if let Some(text) = parts.next() {
-            db.manufacturer = text.trim_matches('"').to_string();
-        }
-    } else if line.contains(r#""GenNWMTalkNM""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMTalkNM
-        if let Some(text) = parts.next() {
-            db.gen_nwm_talk_nm = text.trim_matches('"').to_string();
-        }
-    } else if line.contains(r#""GenNWMSleepTime""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // NmhBaseAddress
-        if let Some(text) = parts.next() {
-            if let Ok(number) = text.parse::<u16>() {
-                db.gen_nwm_sleep_time = number;
+        "NmhMessageCount" => {
+            if let Ok(num) = value.parse::<u8>() {
+                db.nmh_message_count = num;
             }
         }
-    } else if line.contains(r#""GenNWMGotoMode_BusSleep""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMGotoMode_BusSleep
-        if let Some(text) = parts.next() {
-            db.gen_nwm_goto_mode_bus_sleep = text.trim_matches('"').to_string();
+
+        // ---- string fields ----
+        "DBName" => {
+            db.name = value.to_string();
         }
-    } else if line.contains(r#""GenNWMGotoMode_Awake""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMGotoMode_Awake
-        if let Some(text) = parts.next() {
-            db.gen_nwm_goto_mode_awake = text.trim_matches('"').to_string();
+        "BusType" => {
+            db.bustype = if value.eq_ignore_ascii_case("CAN FD") {
+                BusType::CanFd
+            } else {
+                BusType::Can
+            };
         }
-    } else if line.contains(r#""GenNWMApCanWakeUp""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMApCanWakeUp
-        if let Some(text) = parts.next() {
-            db.gen_nwm_ap_can_wake_up = text.trim_matches('"').to_string();
+        "NmType" => {
+            db.nm_type = value.to_string();
         }
-    } else if line.contains(r#""GenNWMApCanSleep""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMApCanSleep
-        if let Some(text) = parts.next() {
-            db.gen_nwm_ap_can_sleep = text.trim_matches('"').to_string();
+        "Manufacturer" => {
+            db.manufacturer = value.to_string();
         }
-    } else if line.contains(r#""GenNWMApCanOn""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMApCanOn
-        if let Some(text) = parts.next() {
-            db.gen_nwm_ap_can_on = text.trim_matches('"').to_string();
+        "GenNWMTalkNM" => {
+            db.gen_nwm_talk_nm = value.to_string();
         }
-    } else if line.contains(r#""GenNWMApCanOff""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMApCanOff
-        if let Some(text) = parts.next() {
-            db.gen_nwm_ap_can_off = text.trim_matches('"').to_string();
+        "GenNWMGotoMode_BusSleep" => {
+            db.gen_nwm_goto_mode_bus_sleep = value.to_string();
         }
-    } else if line.contains(r#""GenNWMApCanNormal""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMApCanNormal
-        if let Some(text) = parts.next() {
-            db.gen_nwm_ap_can_normal = text.trim_matches('"').to_string();
+        "GenNWMGotoMode_Awake" => {
+            db.gen_nwm_goto_mode_awake = value.to_string();
         }
-    } else if line.contains(r#""GenNWMApBusSleep""#) {
-        let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
-        parts.next(); // BA_
-        parts.next(); // GenNWMApBusSleep
-        if let Some(text) = parts.next() {
-            db.gen_nwm_ap_bus_sleep = text.trim_matches('"').to_string();
+        "GenNWMApCanWakeUp" => {
+            db.gen_nwm_ap_can_wake_up = value.to_string();
         }
+        "GenNWMApCanSleep" => {
+            db.gen_nwm_ap_can_sleep = value.to_string();
+        }
+        "GenNWMApCanOn" => {
+            db.gen_nwm_ap_can_on = value.to_string();
+        }
+        "GenNWMApCanOff" => {
+            db.gen_nwm_ap_can_off = value.to_string();
+        }
+        "GenNWMApCanNormal" => {
+            db.gen_nwm_ap_can_normal = value.to_string();
+        }
+        "GenNWMApBusSleep" => {
+            db.gen_nwm_ap_bus_sleep = value.to_string();
+        }
+
+        // Unhandled BA_ attributes are ignored here.
+        _ => {}
     }
 }
 

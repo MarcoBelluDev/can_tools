@@ -1,5 +1,7 @@
 use crate::dbc::support;
-use crate::dbc::support::strings::{accumulate_until_two_unescaped_quotes, has_complete_quoted_segment};
+use crate::dbc::support::strings::{
+    accumulate_until_two_unescaped_quotes, has_complete_quoted_segment,
+};
 use crate::types::database::Database;
 
 use std::fs::File;
@@ -100,7 +102,7 @@ pub fn from_file(path: &str) -> Result<Database, String> {
         match first {
             "VERSION" => {
                 support::version::decode(&mut db, line);
-            },
+            }
             "BA_" => {
                 if third == "BU_" {
                     support::ba_bu_::decode(&mut db, line);
@@ -110,19 +112,19 @@ pub fn from_file(path: &str) -> Result<Database, String> {
                 } else {
                     support::ba_::decode(&mut db, line);
                 }
-            },
+            }
             "BU_" => {
                 support::bu_::decode(&mut db, line);
-            },
+            }
             "BO_" => {
                 support::bo_::decode(&mut db, line);
-            },
+            }
             "SG_" => {
                 support::sg_::decode(&mut db, line);
-            },
+            }
             "BO_TX_BU_" => {
                 support::bo_tx_bu_::decode(&mut db, line);
-            },
+            }
             "CM_" => {
                 if second.starts_with('"') {
                     // Network/global comment: CM_ "…";
@@ -133,27 +135,34 @@ pub fn from_file(path: &str) -> Result<Database, String> {
                     // Accumulate multiline until the comment has two unescaped quotes
                     let mut full_comment_line: String = line.to_string();
                     if !has_complete_quoted_segment(&full_comment_line) {
-                        accumulate_until_two_unescaped_quotes(&mut full_comment_line, &lines, &mut i);
+                        accumulate_until_two_unescaped_quotes(
+                            &mut full_comment_line,
+                            &lines,
+                            &mut i,
+                        );
                     }
                     support::cm_sg_::decode(&mut db, &full_comment_line);
                 } else if second == "BU_" {
                     let mut full_comment_line: String = line.to_string();
                     if !has_complete_quoted_segment(&full_comment_line) {
-                        accumulate_until_two_unescaped_quotes(&mut full_comment_line, &lines, &mut i);
+                        accumulate_until_two_unescaped_quotes(
+                            &mut full_comment_line,
+                            &lines,
+                            &mut i,
+                        );
                     }
                     support::cm_bu_::decode(&mut db, &full_comment_line);
                 }
-            },
+            }
             "VAL_" => {
                 support::val_::decode(&mut db, line);
-            },
-            _ => {},
+            }
+            _ => {}
         }
 
         i += 1;
     }
 
-    
     // re-order
     db.sort_db_nodes_by_name();
     db.sort_db_messages_by_name();

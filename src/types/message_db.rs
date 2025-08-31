@@ -123,9 +123,9 @@ impl MuxInfo {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum GenMsgSendType {
-    Cyclic,         // 0
-    NotUsed,        // da 0 a 6
-    IfActive,       // 7
+    Cyclic,   // 0
+    NotUsed,  // da 0 a 6
+    IfActive, // 7
     #[default]
-    NoMsgSendType   // 8
+    NoMsgSendType, // 8
 }

@@ -1,10 +1,10 @@
-/// Utilities for parsing quoted strings in DBC files.
-///
-/// These helpers support escaped quotes (\") and multi-line quoted strings,
-/// which are common in CM_ comments or attribute values.
+// Utilities for parsing quoted strings in DBC files.
+//
+// These helpers support escaped quotes (\") and multi-line quoted strings,
+// which are common in CM_ comments or attribute values.
 
-/// Count unescaped double quotes in a string.
-/// A quote is considered escaped if immediately preceded by an odd number of backslashes.
+// Count unescaped double quotes in a string.
+// A quote is considered escaped if immediately preceded by an odd number of backslashes.
 pub(crate) fn count_unescaped_quotes(s: &str) -> usize {
     let mut count = 0usize;
     let mut backslashes = 0usize;
@@ -21,24 +21,23 @@ pub(crate) fn count_unescaped_quotes(s: &str) -> usize {
     count
 }
 
-/// Return true if the string contains at least two unescaped quotes.
+// Return true if the string contains at least two unescaped quotes.
 pub(crate) fn has_complete_quoted_segment(s: &str) -> bool {
     count_unescaped_quotes(s) >= 2
 }
 
-/// Accumulate subsequent lines until the buffer contains at least two unescaped quotes.
-///
-/// - `acc` should start with the current line content.
-/// - `lines` is the full file as owned Strings.
-/// - `i` is the current line index; it will be advanced as lines are consumed.
-///
-/// Newlines are inserted between concatenated physical lines.
+// Accumulate subsequent lines until the buffer contains at least two unescaped quotes.
+//
+// - `acc` should start with the current line content.
+// - `lines` is the full file as owned Strings.
+// - `i` is the current line index; it will be advanced as lines are consumed.
+//
+// Newlines are inserted between concatenated physical lines.
 pub(crate) fn accumulate_until_two_unescaped_quotes(
     acc: &mut String,
     lines: &[String],
     i: &mut usize,
-)
-{
+) {
     while !has_complete_quoted_segment(acc) && *i + 1 < lines.len() {
         *i += 1;
         acc.push('\n');
@@ -72,4 +71,3 @@ mod tests {
         assert_eq!(i, 1);
     }
 }
-

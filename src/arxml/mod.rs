@@ -75,25 +75,25 @@ pub fn parse_from_file(path: &str) -> Result<Vec<Database>, String> {
             Ok(Event::Text(word)) => {
                 let text = word.decode().unwrap_or_default().trim().to_string();
 
-                if let Some(current) = current_tag_stack.last() {
-                    if let Some(ref mut db) = current_db {
-                        match current.as_str() {
-                            "SHORT-NAME" if in_can_cluster && db.name.is_empty() => {
-                                db.name = text;
-                            }
-                            "BAUDRATE" => {
-                                db.baudrate = text.parse().unwrap_or(0);
-                            }
-                            "CAN-FD-BAUDRATE" => {
-                                db.baudrate_canfd = text.parse().unwrap_or(0);
-                                db.bustype = BusType::CanFd;
-                            }
-                            "SD" if capture_version => {
-                                db.version = text;
-                                capture_version = false;
-                            }
-                            _ => {}
+                if let Some(current) = current_tag_stack.last()
+                    && let Some(ref mut db) = current_db
+                {
+                    match current.as_str() {
+                        "SHORT-NAME" if in_can_cluster && db.name.is_empty() => {
+                            db.name = text;
                         }
+                        "BAUDRATE" => {
+                            db.baudrate = text.parse().unwrap_or(0);
+                        }
+                        "CAN-FD-BAUDRATE" => {
+                            db.baudrate_canfd = text.parse().unwrap_or(0);
+                            db.bustype = BusType::CanFd;
+                        }
+                        "SD" if capture_version => {
+                            db.version = text;
+                            capture_version = false;
+                        }
+                        _ => {}
                     }
                 }
             }

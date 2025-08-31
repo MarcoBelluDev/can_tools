@@ -29,13 +29,11 @@ pub(crate) fn decode(db: &mut Database, text: &str) {
     };
 
     // Ora puoi prendere un borrow mutabile di `db` per aggiornare il commento.
-    if let Some(sig_key) = sig_key_opt {
-        if let Some(s) = db.get_sig_by_key_mut(sig_key) {
-            if let (Some(first), Some(last)) = (text.find('"'), text.rfind('"')) {
-                if last > first {
-                    s.comment = text[first + 1..last].to_string();
-                }
-            }
-        }
+    if let Some(sig_key) = sig_key_opt
+        && let Some(s) = db.get_sig_by_key_mut(sig_key)
+        && let (Some(first), Some(last)) = (text.find('"'), text.rfind('"'))
+        && last > first
+    {
+        s.comment = text[first + 1..last].to_string();
     }
 }

@@ -31,11 +31,11 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         let tag: &str = after_name.trim_end_matches(':');
         if tag == "M" {
             mux_role = MuxRole::Multiplexor;
-        } else if let Some(rest) = tag.strip_prefix('m') {
-            if let Ok(v) = rest.parse::<u32>() {
-                mux_role = MuxRole::Multiplexed;
-                mux_selectors.push(MuxSelector::Value(v));
-            }
+        } else if let Some(rest) = tag.strip_prefix('m')
+            && let Ok(v) = rest.parse::<u32>()
+        {
+            mux_role = MuxRole::Multiplexed;
+            mux_selectors.push(MuxSelector::Value(v));
         }
     }
 
@@ -60,23 +60,23 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
     // 2) "(factor,offset)"
     let mut factor: f64 = 1.0;
     let mut offset: f64 = 0.0;
-    if let Some(paren) = it.next() {
-        if paren.starts_with('(') {
-            let mut acc = String::from(paren);
-            // Might be split across tokens; gather until ')'
-            while !acc.ends_with(')') {
-                if let Some(tok) = it.next() {
-                    acc.push(' ');
-                    acc.push_str(tok);
-                } else {
-                    break;
-                }
+    if let Some(paren) = it.next()
+        && paren.starts_with('(')
+    {
+        let mut acc = String::from(paren);
+        // Might be split across tokens; gather until ')'
+        while !acc.ends_with(')') {
+            if let Some(tok) = it.next() {
+                acc.push(' ');
+                acc.push_str(tok);
+            } else {
+                break;
             }
-            let inner: &str = acc.trim_start_matches('(').trim_end_matches(')');
-            let mut nums = inner.split(',').map(|s| s.trim());
-            factor = nums.next().unwrap_or("1").parse().unwrap_or(1.0);
-            offset = nums.next().unwrap_or("0").parse().unwrap_or(0.0);
         }
+        let inner: &str = acc.trim_start_matches('(').trim_end_matches(')');
+        let mut nums = inner.split(',').map(|s| s.trim());
+        factor = nums.next().unwrap_or("1").parse().unwrap_or(1.0);
+        offset = nums.next().unwrap_or("0").parse().unwrap_or(0.0);
     }
 
     // 3) "[min|max]"
@@ -164,10 +164,10 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
 
     // Back-link: for each receiver node, add this SignalKey in the signals_read vector
     for nk in receiver_nodes {
-        if let Some(node) = db.get_node_by_key_mut(nk) {
-            if !node.signals_read.contains(&sig_key) {
-                node.signals_read.push(sig_key);
-            }
+        if let Some(node) = db.get_node_by_key_mut(nk)
+            && !node.signals_read.contains(&sig_key)
+        {
+            node.signals_read.push(sig_key);
         }
     }
 }

@@ -50,14 +50,13 @@ pub(crate) fn decode(db: &mut Database, line: &str) {
         table.insert(val, desc);
     }
 
-    if let Some(msg) = db.get_message_by_id(message_id) {
-        if let Some(&sig_key) = msg.signals.iter().find(|&&sig_key| {
+    if let Some(msg) = db.get_message_by_id(message_id)
+        && let Some(&sig_key) = msg.signals.iter().find(|&&sig_key| {
             db.get_sig_by_key(sig_key)
                 .is_some_and(|s| s.name == signal_name)
-        }) {
-            if let Some(s) = db.get_sig_by_key_mut(sig_key) {
-                s.value_table = table;
-            }
-        }
+        })
+        && let Some(s) = db.get_sig_by_key_mut(sig_key)
+    {
+        s.value_table = table;
     }
 }
