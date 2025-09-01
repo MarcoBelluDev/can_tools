@@ -1,4 +1,5 @@
-/// A single row from the log with timing/channel and a pointer to its [`MessageLog`].
+/// A single row from the log with timing/channel and a pointer to its
+/// [`MessageLog`](crate::asc::types::message_log::MessageLog).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CanFrame {
     /// Absolute timestamp in `%Y-%m-%d %H:%M:%S%.3f` when available,

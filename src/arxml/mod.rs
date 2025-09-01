@@ -1,7 +1,7 @@
 //! # arxml
 //!
 //! Parser utilities for reading **AUTOSAR ARXML** files and extracting CAN clusters
-//! into the SlotMap-backed [`DatabaseDBC`]. Ethernet clusters are ignored by design.
+//! into the SlotMap-backed [`DatabaseDBC`](crate::dbc::types::database::DatabaseDBC). Ethernet clusters are ignored by design.
 //!
 //! _Module docs refreshed._
 //!
@@ -23,8 +23,8 @@ pub mod types;
 
 /// Parses an AUTOSAR ARXML file and extracts CAN clusters.
 ///
-/// Returns one [`DatabaseARXML`] per `<CAN-CLUSTER>` found. Ethernet clusters and
-/// unrelated content are ignored. The parser reads the file as XML, captures the
+/// Returns one [`DatabaseARXML`] per `<CAN-CLUSTER>` found.
+/// Ethernet clusters and unrelated content are ignored. The parser reads the file as XML, captures the
 /// cluster `SHORT-NAME`, baud rates (`BAUDRATE`, `CAN-FD-BAUDRATE`) and the
 /// version string from `ADMIN-DATA/SD[GID="Version"]` when present.
 ///

@@ -1,4 +1,5 @@
-/// Metadata and payload carried by a [`CanFrame`].
+/// Metadata and payload carried by a
+/// [`CanFrame`](crate::asc::types::canframe::CanFrame).
 ///
 /// There is typically one `MessageLog` per `CanFrame`.
 #[derive(Debug, Clone, Default, PartialEq)]
