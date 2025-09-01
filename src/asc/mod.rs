@@ -5,5 +5,6 @@
 //! Helper routines are in `asc::support` (absolute-time header, line parsing, utilities).
 //! _Module docs refreshed_.
 
+pub(crate) mod core;
 pub mod parse;
-pub(crate) mod support;
+pub mod types;

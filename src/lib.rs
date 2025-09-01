@@ -16,19 +16,6 @@
 pub mod arxml;
 pub mod asc;
 pub mod dbc;
-#[doc(hidden)]
-pub mod types;
-
-// Top-level re-exports (appear under Crate Items → Structs)
-#[doc(inline)]
-pub use crate::types::{
-    absolute_time::AbsoluteTime,
-    canlog::{CanFrame, CanLog, MessageLog, SignalLog},
-    database::{BusType, Database, MessageKey, NodeKey, Present, SignalKey},
-    message_db::{IdFormat, MessageDB, MuxInfo, MuxRole, MuxSelector},
-    node_db::NodeDB,
-    signal_db::SignalDB,
-};
 
 // Helper re-export for UI convenience
-pub use crate::types::canlog::resolve_message_signals;
+pub use crate::asc::types::canlog::resolve_message_signals;

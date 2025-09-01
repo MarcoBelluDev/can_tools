@@ -2,14 +2,15 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-use crate::asc::support;
-use crate::{CanLog, Database};
+use crate::asc::core;
+use crate::asc::types::canlog::CanLog;
+use crate::dbc::types::database::DatabaseDBC;
 
 /// Parses a Vector ASCII trace (`.asc`) file and builds a `CanLog`.
 ///
 /// The function reads the file **line by line**, discovers an optional absolute-time
 /// header (a line starting with `date`), and then parses CAN/CAN-FD frames.
-/// Every parsed frame is pushed into `log.all_frame`. In addition, the function
+/// Every parsed frame is pushed into `log.can_frames`. In addition, the function
 /// keeps, for each unique `(numeric id, channel)` pair, **only the index of the most recent frame**
 /// (by `timestamp` seconds) and stores those indices in `log.last_id_chn_frame`.
 ///
@@ -22,10 +23,10 @@ use crate::{CanLog, Database};
 ///
 /// # Parameters
 /// - `path`: Path to the `.asc` file. Must end with `.asc`.
-/// - `db_list`: Mapping **channel → Database** used to enrich frames (e.g., message
+/// - `db_list`: Mapping **channel → DatabaseDBC** used to enrich frames (e.g., message
 ///   name and sender). If a channel has no entry, enrichment is skipped.
 ///   Extended IDs in traces may end with `x`/`X`; the parser trims that and adds `0x`
-///   before calling `Database::get_message_by_id_hex`.
+///   before calling `DatabaseDBC::get_message_by_id_hex`.
 ///
 /// # Returns
 /// - `Ok(CanLog)` on success, where:
@@ -56,7 +57,7 @@ use crate::{CanLog, Database};
 /// # Notes
 /// - Lines are streamed with `BufRead::lines()`. Non-frame lines are ignored unless
 ///   they match the `date` header format handled by `abs_time::from_line`.
-pub fn from_file(path: &str, db_list: &HashMap<u8, Database>) -> Result<CanLog, String> {
+pub fn from_file(path: &str, db_list: &HashMap<u8, DatabaseDBC>) -> Result<CanLog, String> {
     // check if provided file has .asc format
     if !path.ends_with(".asc") {
         return Err("Not a valid .asc file format".to_string());
@@ -79,12 +80,12 @@ pub fn from_file(path: &str, db_list: &HashMap<u8, Database>) -> Result<CanLog, 
 
     // read .asc file line by line
     for line in reader.lines().map_while(Result::ok) {
-        if !found_abs_time && let Some(time) = support::abs_time::from_line(&line) {
+        if !found_abs_time && let Some(time) = core::abs_time::from_line(&line) {
             log.absolute_time = time;
             found_abs_time = true;
             continue; // skip abs_time check for rest of the line
         }
-        support::line::parse(
+        core::line::parse(
             &line,
             &mut log,
             db_list,

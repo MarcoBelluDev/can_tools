@@ -1,18 +1,15 @@
-use crate::dbc::support;
-use crate::dbc::support::strings::{
-    accumulate_until_two_unescaped_quotes, has_complete_quoted_segment,
-};
-use crate::types::database::Database;
+use crate::dbc::core;
+use crate::dbc::types::database::DatabaseDBC;
 
 use std::fs::File;
 use std::io::{BufReader, Read};
 
 use encoding_rs::WINDOWS_1252;
 
-/// Parses a DBC file and returns a populated [`Database`] instance.
+/// Parses a DBC file and returns a populated [`DatabaseDBC`] instance.
 ///
 /// This function reads a DBC file from disk, parses its content line by line,
-/// and fills the [`Database`] structure with all parsed information:
+/// and fills the [`DatabaseDBC`] structure with all parsed information:
 /// - **Name** (from `BA_ "DBName"` line)
 /// - **Version** (from `VERSION` line)
 /// - **Baudrate** (from `BA_ "Baudrate"` line)
@@ -32,7 +29,7 @@ use encoding_rs::WINDOWS_1252;
 /// - `path`: Path to the `.dbc` file to parse.
 ///
 /// # Returns
-/// - `Ok(Database)` if the file was successfully read and parsed.
+/// - `Ok(DatabaseDBC)` if the file was successfully read and parsed.
 /// - `Err(String)` if the file could not be opened or read.
 ///
 /// # Errors
@@ -42,11 +39,11 @@ use encoding_rs::WINDOWS_1252;
 /// - The DBC content is malformed beyond recovery (most parsing errors are ignored and result in missing elements).
 ///
 /// # Notes
-/// - This function is the main entry point for converting a DBC file into a structured [`Database`].
-/// - Internal parsing details are handled by [`Database`] methods and are **not** part of the public API.
+/// - This function is the main entry point for converting a DBC file into a structured [`DatabaseDBC`].
+/// - Internal parsing details are handled by [`DatabaseDBC`] methods and are **not** part of the public API.
 /// - Parsing stops only at the end of the file; malformed lines are skipped.
 ///
-pub fn from_file(path: &str) -> Result<Database, String> {
+pub fn from_file(path: &str) -> Result<DatabaseDBC, String> {
     // check if provided file has .dbc format
     if !path.ends_with(".dbc") {
         return Err("Not a valid .dbc file format".to_string());
@@ -79,8 +76,8 @@ pub fn from_file(path: &str) -> Result<Database, String> {
     // split text in lines
     let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
 
-    // Initialize database and row counter
-    let mut db: Database = Database::default();
+    // Initialize DatabaseDBC and row counter
+    let mut db: DatabaseDBC = DatabaseDBC::default();
     let mut i: usize = 0;
 
     while i < lines.len() {
@@ -101,61 +98,76 @@ pub fn from_file(path: &str) -> Result<Database, String> {
 
         match first {
             "VERSION" => {
-                support::version::decode(&mut db, line);
-            }
-            "BA_" => {
-                if third == "BU_" {
-                    support::ba_bu_::decode(&mut db, line);
-                } else if third == "BO_" {
-                    support::ba_bo_::decode(&mut db, line);
-                } else if third == "SG_" {
-                } else {
-                    support::ba_::decode(&mut db, line);
-                }
+                core::version::decode(&mut db, line);
             }
             "BU_" => {
-                support::bu_::decode(&mut db, line);
+                core::bu_::decode(&mut db, line);
             }
             "BO_" => {
-                support::bo_::decode(&mut db, line);
+                core::bo_::decode(&mut db, line);
             }
             "SG_" => {
-                support::sg_::decode(&mut db, line);
+                core::sg_::decode(&mut db, line);
             }
             "BO_TX_BU_" => {
-                support::bo_tx_bu_::decode(&mut db, line);
+                core::bo_tx_bu_::decode(&mut db, line);
             }
             "CM_" => {
                 if second.starts_with('"') {
                     // Network/global comment: CM_ "…";
-                    support::cm_::decode(&mut db, line);
+                    core::cm_::decode(&mut db, line);
                 } else if second == "BO_" {
-                    support::cm_bo_::decode(&mut db, line);
+                    core::cm_bo_::decode(&mut db, line);
                 } else if second == "SG_" {
                     // Accumulate multiline until the comment has two unescaped quotes
                     let mut full_comment_line: String = line.to_string();
-                    if !has_complete_quoted_segment(&full_comment_line) {
-                        accumulate_until_two_unescaped_quotes(
+                    if !core::strings::has_complete_quoted_segment(&full_comment_line) {
+                        core::strings::accumulate_until_two_unescaped_quotes(
                             &mut full_comment_line,
                             &lines,
                             &mut i,
                         );
                     }
-                    support::cm_sg_::decode(&mut db, &full_comment_line);
+                    core::cm_sg_::decode(&mut db, &full_comment_line);
                 } else if second == "BU_" {
                     let mut full_comment_line: String = line.to_string();
-                    if !has_complete_quoted_segment(&full_comment_line) {
-                        accumulate_until_two_unescaped_quotes(
+                    if !core::strings::has_complete_quoted_segment(&full_comment_line) {
+                        core::strings::accumulate_until_two_unescaped_quotes(
                             &mut full_comment_line,
                             &lines,
                             &mut i,
                         );
                     }
-                    support::cm_bu_::decode(&mut db, &full_comment_line);
+                    core::cm_bu_::decode(&mut db, &full_comment_line);
+                }
+            }
+            "BA_DEF_" => {
+                if second == "BU_" {
+                    core::ba_def_bu_::decode(&mut db, line);
+                } else if second == "BO_" {
+                    core::ba_def_bo_::decode(&mut db, line);
+                } else if second == "SG_" {
+                    core::ba_def_sg_::decode(&mut db, line);
+                } else {
+                    core::ba_def_::decode(&mut db, line);
+                }
+            }
+            "BA_DEF_DEF_" => {
+                core::ba_def_def_::decode(&mut db, line);
+            }
+            "BA_" => {
+                if third == "BU_" {
+                    core::ba_bu_::decode(&mut db, line);
+                } else if third == "BO_" {
+                    core::ba_bo_::decode(&mut db, line);
+                } else if third == "SG_" {
+                    core::ba_sg_::decode(&mut db, line);
+                } else {
+                    core::ba_::decode(&mut db, line);
                 }
             }
             "VAL_" => {
-                support::val_::decode(&mut db, line);
+                core::val_::decode(&mut db, line);
             }
             _ => {}
         }

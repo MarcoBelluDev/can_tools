@@ -5,5 +5,6 @@
 //! Supporting functions live under `dbc::support` (token normalization, ID parsing, etc.).
 //! _Module docs refreshed_.
 
+pub(crate) mod core;
 pub mod parse;
-pub(crate) mod support;
+pub mod types;
