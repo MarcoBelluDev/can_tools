@@ -26,8 +26,13 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         _ => return,
     }
 
-    // 4) msg id
-    parts.next();
+    // 4) message id (numeric)
+    let Some(msg_id_tok) = parts.next() else {
+        return;
+    };
+    let Ok(msg_id) = msg_id_tok.parse::<u32>() else {
+        return;
+    };
 
     // 5) Retrieve sig name
     let Some(sig_name) = parts.next() else {
@@ -92,8 +97,24 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         }
     };
 
-    // 9) assign the value (lookup signal by name)
-    if let Some(sig) = db.get_signal_by_name_mut(sig_name) {
+    // 9) assign the value: resolve the signal within the specific message ID
+    let sig_key_opt = {
+        let msg = match db.get_message_by_id(msg_id) {
+            Some(m) => m,
+            None => return,
+        };
+        msg
+            .signals
+            .iter()
+            .copied()
+            .find(|&sk| db
+                .get_sig_by_key(sk)
+                .is_some_and(|s| s.name.eq_ignore_ascii_case(sig_name)))
+    };
+
+    if let Some(sk) = sig_key_opt
+        && let Some(sig) = db.get_sig_by_key_mut(sk)
+    {
         sig.attributes.insert(attr_name.to_string(), attr_value);
     }
 }

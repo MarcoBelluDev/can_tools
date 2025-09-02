@@ -34,10 +34,10 @@ pub struct SignalDBC {
     pub bit_start: u16,
     /// Bit length.
     pub bit_length: u16,
-    /// Endianness: `1` = little-endian (Intel), `0` = big-endian (Motorola).
-    pub endian: u8,
-    /// Sign: `1` = signed, `0` = unsigned.
-    pub sign: u8,
+    /// Endianness.
+    pub endian: Endianness,
+    /// Sign.
+    pub sign: Signess,
     /// Scaling factor.
     pub factor: f64,
     /// Scaling offset.
@@ -103,7 +103,7 @@ impl SignalDBC {
             .max(1);
         self.steps.reserve_exact(n_steps);
 
-        if self.endian == 1 {
+        if matches!(self.endian, Endianness::Intel) {
             self.compile_intel();
         } else {
             self.compile_motorola();
@@ -192,7 +192,7 @@ impl SignalDBC {
     pub fn extract_raw_i64(&self, bytes: &[u8]) -> i64 {
         let raw_u: u64 = self.extract_raw_u64(bytes);
         let n: u16 = self.bit_length.min(64);
-        if self.sign == 1 && n > 0 {
+        if matches!(self.sign, Signess::Signed) && n > 0 {
             let sign_bit = 1u64 << (n - 1);
             if (raw_u & sign_bit) != 0 {
                 let mask = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
@@ -240,4 +240,18 @@ impl SignalDBC {
     pub fn clear(&mut self) {
         *self = SignalDBC::default();
     }
+}
+
+#[derive(Default, Clone, PartialEq, Debug)]
+pub enum Endianness {
+    #[default]
+    Motorola,   // 0
+    Intel,      // 1
+}
+
+#[derive(Default, Clone, PartialEq, Debug)]
+pub enum Signess {
+    #[default]
+    Unsigned,   // 0
+    Signed,     // 1
 }

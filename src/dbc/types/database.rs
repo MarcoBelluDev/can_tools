@@ -20,7 +20,7 @@ use crate::dbc::types::{
     attributes::{AttributeSpec, AttributeValue},
     message::{IdFormat, MessageDBC, MuxInfo, MuxRole, MuxSelector},
     node::NodeDBC,
-    signal::SignalDBC,
+    signal::{Endianness, Signess, SignalDBC},
 };
 
 // --- Stable keys (SlotMap) ---
@@ -333,8 +333,8 @@ impl DatabaseDBC {
             name: name.to_string(),
             bit_start,
             bit_length,
-            endian,
-            sign,
+            endian: if endian == 1 { Endianness::Intel } else { Endianness::Motorola },
+            sign: if sign == 1 { Signess::Signed } else { Signess::Unsigned },
             factor,
             offset,
             min,
