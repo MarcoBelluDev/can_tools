@@ -5,6 +5,7 @@ use crate::asc::types::{
     canframe::CanFrame, canlog::CanLog, message_log::MessageLog, signal_log::SignalLog,
 };
 use crate::dbc::types::database::DatabaseDBC;
+use crate::asc::core::signal_conversion;
 
 // Example:
 // 0.016728 1 17334410x Rx d 8 3E 42 03 00 39 00 03 01
@@ -122,7 +123,7 @@ pub(crate) fn parse(
         for &sig_key in &msg.signals {
             if let Some(s) = dbc.get_sig_by_key(sig_key) {
                 let raw: i64 = s.extract_raw_i64(&payload_bytes);
-                let sigf: SignalLog = s.to_sigframe(raw);
+                let sigf: SignalLog = signal_conversion::to_sigframe(s, raw);
 
                 // Append a point to the corresponding SignalLog time series
                 let t: f32 = timestamp;

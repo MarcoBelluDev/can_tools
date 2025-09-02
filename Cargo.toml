@@ -16,10 +16,20 @@ readme = "README.md"
 name = "can_tools"
 path = "src/lib.rs"
 
+[features]
+default = ["dbc", "asc", "arxml"]
+# Core feature flags to include only what you need
+# - `dbc`: Database parser and types
+# - `asc`: Vector ASCII log parser (depends on `dbc`)
+# - `arxml`: AUTOSAR ARXML parser
+dbc = ["dep:encoding_rs", "dep:slotmap"]
+asc = ["dbc", "dep:chrono"]
+arxml = ["dep:quick-xml"]
+
 [dependencies]
-chrono = "0.4.41"
-encoding_rs = "0.8.35"
-quick-xml = "0.38.1"
+chrono = { version = "0.4.41", optional = true }
+encoding_rs = { version = "0.8.35", optional = true }
+quick-xml = { version = "0.38.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_derive = "1.0.219"
-slotmap = "1.0.7"
+slotmap = { version = "1.0.7", optional = true }

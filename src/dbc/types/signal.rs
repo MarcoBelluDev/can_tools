@@ -1,4 +1,3 @@
-use crate::asc::types::signal_log::SignalLog;
 use crate::dbc::types::{
     attributes::AttributeValue,
     database::{DatabaseDBC, MessageKey, NodeKey},
@@ -205,36 +204,7 @@ impl SignalDBC {
         }
     }
 
-    // Converts a raw value into an "instantaneous" `SignalLog` with physical value, text, and metadata.
-    //
-    // *Note*: the unit is normalized by removing an optional `"Unit_"` prefix.
-    #[inline]
-    pub(crate) fn to_sigframe(&self, raw_i: i64) -> SignalLog {
-        let value: f64 = (raw_i as f64) * self.factor + self.offset;
-        let text: String = self
-            .value_table
-            .get(&(raw_i as i32))
-            .cloned()
-            .unwrap_or_default();
-        SignalLog {
-            message: 0,
-            name: self.name.clone(),
-            factor: self.factor,
-            offset: self.offset,
-            channel: 0,
-            raw: raw_i,
-            value,
-            unit: self
-                .unit_of_measurement
-                .strip_prefix("Unit_")
-                .unwrap_or(&self.unit_of_measurement)
-                .to_string(),
-            text,
-            comment: self.comment.clone(),
-            value_table: self.value_table.clone(),
-            values: Vec::new(),
-        }
-    }
+    // Note: signal-to-frame conversion is implemented in `asc::core::signal_conversion`.
 
     /// Resets all fields to their default values.
     pub fn clear(&mut self) {

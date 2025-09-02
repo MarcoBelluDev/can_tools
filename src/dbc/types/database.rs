@@ -8,7 +8,8 @@
 //! **Lookups** are normalized and O(1): `get_message_by_id/_hex/_name`, `get_node_by_name`, `get_signal_by_name`.
 //! Names are case-insensitive; hexadecimal IDs use uppercase `0x...` form.
 //!
-//! Signal decoding utilities live on [`SignalDBC`]: `compile_inline()`, `extract_raw_u64/i64()`, and `to_sigframe()`.
+//! Signal decoding utilities live on [`SignalDBC`]: `compile_inline()`, `extract_raw_u64/i64()`.
+//! Conversion to `SignalLog` is provided under `asc::core::signal_conversion` when the `asc` feature is enabled.
 //!
 //! _Docs refreshed: 2025-08-22_
 //!
