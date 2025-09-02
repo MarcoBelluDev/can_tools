@@ -358,6 +358,23 @@ impl DatabaseDBC {
             m.signals.push(sig_key);
         }
 
+        // Also back-link: for each sender node of this message, mark this signal as sent
+        // This keeps NodeDBC.signals_sent consistent when the transmitter is specified on BO_
+        // and SG_ lines are parsed afterwards (common case without BO_TX_BU_ lines).
+        {
+            let sender_nodes: Vec<NodeKey> = self
+                .get_message_by_key(msg_key)
+                .map(|m| m.sender_nodes.clone())
+                .unwrap_or_default();
+            for nk in sender_nodes {
+                if let Some(node) = self.get_node_by_key_mut(nk)
+                    && !node.signals_sent.contains(&sig_key)
+                {
+                    node.signals_sent.push(sig_key);
+                }
+            }
+        }
+
         // --- update message multiplexing info ---
         match mux_role {
             MuxRole::None => { /* Nothing to do */ }
