@@ -272,10 +272,10 @@ impl DatabaseDBC {
     }
 
     // -------------- Signals ------------
-    // Adds a signal to the database if not already present and returns the corresponding `SignalKey`.
-    // valid only during construction of DB from .dbc because of current_message!
+    /// Adds a signal to the database if not already present and returns the corresponding `SignalKey`.
+    /// valid only during construction of DB from .dbc because of current_message!
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn add_signal_if_absent(
+    pub fn add_signal_if_absent(
         &mut self,
         name: &str,
         bit_start: u16,
