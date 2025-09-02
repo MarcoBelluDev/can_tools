@@ -29,7 +29,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     // multiplexing tag decoding (if present)
     let mut mux_role: MuxRole = MuxRole::None;
-    let mut mux_selectors: Vec<MuxSelector> = Vec::new();
+    let mut mux_selector: Option<MuxSelector> = None;
     if !after_name.is_empty() {
         let tag: &str = after_name.trim_end_matches(':');
         if tag == "M" {
@@ -38,7 +38,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             && let Ok(v) = rest.parse::<u32>()
         {
             mux_role = MuxRole::Multiplexed;
-            mux_selectors.push(MuxSelector::Value(v));
+            mux_selector = Some(MuxSelector::Value(v));
         }
     }
 
@@ -162,7 +162,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         &unit,
         receiver_nodes.clone(),
         mux_role,
-        &mux_selectors,
+        mux_selector,
     );
 
     // Back-link: for each receiver node, add this SignalKey in the signals_read vector

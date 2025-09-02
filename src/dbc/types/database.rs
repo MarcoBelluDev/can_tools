@@ -187,6 +187,7 @@ impl DatabaseDBC {
                 "CAN FD".into()
             },
             sender_nodes: sender_node_id.into_iter().collect(),
+            receiver_nodes: Vec::new(),
             signals: Vec::new(),
             comment: String::new(),
             mux_multiplexors: Vec::new(),
@@ -287,7 +288,7 @@ impl DatabaseDBC {
         unit: &str,
         receiver_nodes: Vec<NodeKey>,
         mux_role: MuxRole,
-        mux_selectors: &[MuxSelector],
+        mux_selector: Option<MuxSelector>,
     ) -> SignalKey {
         if let Some(r) = self.get_sig_key_by_name(name) {
             return r;
@@ -323,9 +324,12 @@ impl DatabaseDBC {
                 role: mux_role,
                 group: 0,
                 switch: inferred_switch,
-                selectors: mux_selectors.to_vec(),
+                selector: mux_selector.clone().unwrap_or_default(),
             })
         };
+
+        // We'll need receiver_nodes later to aggregate into MessageDBC.receiver_nodes
+        let msg_receivers: Vec<NodeKey> = receiver_nodes.clone();
 
         let mut sig: SignalDBC = SignalDBC {
             attributes: BTreeMap::default(),
@@ -358,6 +362,15 @@ impl DatabaseDBC {
             m.signals.push(sig_key);
         }
 
+        // Aggregate receivers at message level (union of all signal receivers)
+        if let Some(m) = self.get_message_by_key_mut(msg_key) {
+            for nk in msg_receivers {
+                if !m.receiver_nodes.contains(&nk) {
+                    m.receiver_nodes.push(nk);
+                }
+            }
+        }
+
         // Also back-link: for each sender node of this message, mark this signal as sent
         // This keeps NodeDBC.signals_sent consistent when the transmitter is specified on BO_
         // and SG_ lines are parsed afterwards (common case without BO_TX_BU_ lines).
@@ -388,16 +401,16 @@ impl DatabaseDBC {
 
                 // link dependant signals with no Multiplexor yet to this new Multiplexor
                 // Usually, this should never happen because Multiplexor must always be first line in a message
-                let dep_to_attach: Vec<(SignalKey, Vec<MuxSelector>)> = {
+                let dep_to_attach: Vec<(SignalKey, MuxSelector)> = {
                     let msg: &MessageDBC = self.get_message_by_key(msg_key).unwrap();
                     msg.signals
                         .iter()
                         .copied()
                         .filter_map(|sk| {
-                            let s = self.get_sig_by_key(sk)?;
-                            let mi = s.mux.as_ref()?;
+                            let s: &SignalDBC = self.get_sig_by_key(sk)?;
+                            let mi: &MuxInfo = s.mux.as_ref()?;
                             if mi.role == MuxRole::Multiplexed && mi.switch.is_none() {
-                                Some((sk, mi.selectors.clone()))
+                                Some((sk, mi.selector.clone()))
                             } else {
                                 None
                             }
@@ -406,7 +419,7 @@ impl DatabaseDBC {
                 };
 
                 // Update the signals and the mux_cases
-                for (sk, sels) in dep_to_attach {
+                for (sk, sel) in dep_to_attach {
                     // set the Multiplexor to the signal
                     if let Some(s) = self.get_sig_by_key_mut(sk)
                         && let Some(mi) = s.mux.as_mut()
@@ -418,9 +431,7 @@ impl DatabaseDBC {
                     // Update the map of the message
                     if let Some(m) = self.get_message_by_key_mut(msg_key) {
                         let by_sel = m.mux_cases.entry(sig_key).or_default();
-                        for sel in &sels {
-                            by_sel.entry(sel.clone()).or_default().push(sk);
-                        }
+                        by_sel.entry(sel.clone()).or_default().push(sk);
                     }
                 }
             }
@@ -429,7 +440,7 @@ impl DatabaseDBC {
                     && let Some(m) = self.get_message_by_key_mut(msg_key)
                 {
                     let by_sel = m.mux_cases.entry(sw).or_default();
-                    for sel in mux_selectors {
+                    if let Some(sel) = mux_selector {
                         by_sel.entry(sel.clone()).or_default().push(sig_key);
                     }
                 }
@@ -547,7 +558,7 @@ impl DatabaseDBC {
     /// Sort `sender_nodes` and `signals` inside the specific given MessageDBC
     /// by the target names (ASCII case-insensitive).
     pub fn sort_message_fields(&mut self, msg_key: MessageKey) {
-        let (sorted_nodes, sorted_sigs) = {
+        let (sorted_senders, sorted_sigs, sorted_receivers) = {
             let Some(msg) = self.get_message_by_key(msg_key) else {
                 return;
             };
@@ -555,6 +566,14 @@ impl DatabaseDBC {
             // sender_nodes -> by NodeDBC.name
             let mut ns: Vec<NodeKey> = msg.sender_nodes.clone();
             ns.sort_by_key(|&nk| {
+                self.get_node_by_key(nk)
+                    .map(|n| n.name.to_ascii_lowercase())
+                    .unwrap_or_default()
+            });
+
+            // receiver_nodes -> by NodeDBC.name
+            let mut rn: Vec<NodeKey> = msg.receiver_nodes.clone();
+            rn.sort_by_key(|&nk| {
                 self.get_node_by_key(nk)
                     .map(|n| n.name.to_ascii_lowercase())
                     .unwrap_or_default()
@@ -568,12 +587,13 @@ impl DatabaseDBC {
                     .unwrap_or_default()
             });
 
-            (ns, ss)
+            (ns, ss, rn)
         };
 
         if let Some(msg) = self.get_message_by_key_mut(msg_key) {
-            msg.sender_nodes = sorted_nodes;
+            msg.sender_nodes = sorted_senders;
             msg.signals = sorted_sigs;
+            msg.receiver_nodes = sorted_receivers;
         }
     }
 
@@ -667,13 +687,23 @@ impl DatabaseDBC {
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key.
     pub fn sort_all_message_fields(&mut self) {
-        let plans: Vec<(MessageKey, Vec<NodeKey>, Vec<SignalKey>)> = self
+        let plans: Vec<(MessageKey, Vec<NodeKey>, Vec<SignalKey>, Vec<NodeKey>)> = self
             .messages
             .iter()
             .map(|(mk, msg)| {
                 // sender_nodes -> sort by node name (case-insensitive)
                 let mut ns = msg.sender_nodes.clone();
                 ns.sort_by_cached_key(|&nk| {
+                    let (missing, name) = match self.get_node_by_key(nk) {
+                        Some(n) => (false, n.name.to_ascii_lowercase()),
+                        None => (true, String::new()),
+                    };
+                    (missing, name, nk)
+                });
+
+                // receiver_nodes -> sort by node name (case-insensitive)
+                let mut rn = msg.receiver_nodes.clone();
+                rn.sort_by_cached_key(|&nk| {
                     let (missing, name) = match self.get_node_by_key(nk) {
                         Some(n) => (false, n.name.to_ascii_lowercase()),
                         None => (true, String::new()),
@@ -691,14 +721,15 @@ impl DatabaseDBC {
                     (missing, name, sk)
                 });
 
-                (mk, ns, ss)
+                (mk, ns, ss, rn)
             })
             .collect();
 
-        for (mk, ns, ss) in plans {
+        for (mk, ns, ss, rn) in plans {
             if let Some(msg) = self.get_message_by_key_mut(mk) {
                 msg.sender_nodes = ns;
                 msg.signals = ss;
+                msg.receiver_nodes = rn;
             }
         }
     }

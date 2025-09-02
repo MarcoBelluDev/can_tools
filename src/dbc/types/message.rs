@@ -26,6 +26,8 @@ pub struct MessageDBC {
     pub msgtype: String,
     /// Transmitting nodes (ECUs) for this message.
     pub sender_nodes: Vec<NodeKey>,
+    /// Receiver nodes (ECUs) aggregated from all signals in this message.
+    pub receiver_nodes: Vec<NodeKey>,
     /// Signals that belong to this message.
     pub signals: Vec<SignalKey>,
     /// Associated comment (DBC `CM_ BO_` section).
@@ -93,6 +95,13 @@ pub enum MuxSelector {
     Range { min: u32, max: u32 },
 }
 
+impl Default for MuxSelector {
+    fn default() -> Self {
+        // Default is a no-op value; only meaningful when role == Multiplexed.
+        MuxSelector::Value(0)
+    }
+}
+
 /// Multiplexing metadata attached to a signal.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MuxInfo {
@@ -103,7 +112,7 @@ pub struct MuxInfo {
     /// For `Dependent` signals, the switch controlling it. `None` otherwise.
     pub switch: Option<SignalKey>,
     /// For `Dependent` signals, the allowed selectors (values/ranges). Empty otherwise.
-    pub selectors: Vec<MuxSelector>,
+    pub selector: MuxSelector,
 }
 
 impl MuxInfo {
