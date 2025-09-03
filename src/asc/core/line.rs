@@ -1,11 +1,11 @@
-use chrono::{Duration, NaiveDateTime, Datelike, Timelike};
+use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
 use std::collections::HashMap;
 
+use crate::asc::core::signal_conversion;
 use crate::asc::types::{
     canframe::CanFrame, canlog::CanLog, message_log::MessageLog, signal_log::SignalLog,
 };
 use crate::dbc::types::database::DatabaseDBC;
-use crate::asc::core::signal_conversion;
 
 // Example:
 // 0.016728 1 17334410x Rx d 8 3E 42 03 00 39 00 03 01

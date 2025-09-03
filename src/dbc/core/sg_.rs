@@ -139,7 +139,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     let mut receiver_nodes: Vec<NodeKey> = Vec::new();
     let recv_opt: Option<&str> = it.next();
     if let Some(recv) = recv_opt {
-        for node_name in recv.split(",").into_iter() {
+        for node_name in recv.split(",") {
             if let Some(key) = db.get_node_key_by_name(node_name) {
                 receiver_nodes.push(key);
             }
@@ -161,7 +161,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         mux_role,
         mux_selector,
     );
-    
+
     // Back-link: for each receiver node, add this SignalKey in the signals_read vector
     for nk in receiver_nodes {
         if let Some(node) = db.get_node_by_key_mut(nk)

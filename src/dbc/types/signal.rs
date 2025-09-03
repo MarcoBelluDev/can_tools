@@ -215,13 +215,13 @@ impl SignalDBC {
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum Endianness {
     #[default]
-    Motorola,   // 0
-    Intel,      // 1
+    Motorola, // 0
+    Intel, // 1
 }
 
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum Signess {
     #[default]
-    Unsigned,   // 0
-    Signed,     // 1
+    Unsigned, // 0
+    Signed, // 1
 }

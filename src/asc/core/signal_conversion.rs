@@ -31,4 +31,3 @@ pub(crate) fn to_sigframe(sig: &SignalDBC, raw_i: i64) -> SignalLog {
         values: Vec::new(),
     }
 }
-

@@ -21,7 +21,7 @@ use crate::dbc::types::{
     attributes::{AttributeSpec, AttributeValue},
     message::{IdFormat, MessageDBC, MuxInfo, MuxRole, MuxSelector},
     node::NodeDBC,
-    signal::{Endianness, Signess, SignalDBC},
+    signal::{Endianness, SignalDBC, Signess},
 };
 
 // --- Stable keys (SlotMap) ---
@@ -63,6 +63,16 @@ pub struct DatabaseDBC {
     pub msg_attr_spec: BTreeMap<String, AttributeSpec>,
     pub sig_attr_spec: BTreeMap<String, AttributeSpec>,
 
+    // --- Relational Attributes Spec ---
+    // Definitions (BA_DEF_REL_) and defaults (BA_DEF_DEF_REL_) for attributes that
+    // apply to relations between two entities.
+    //
+    // Vector DBC supports at least these relation kinds:
+    // - BU_SG_REL_: Node ↔ Signal
+    // - BU_BO_REL_: Node ↔ Message
+    pub rel_attr_spec_bu_sg: BTreeMap<String, AttributeSpec>,
+    pub rel_attr_spec_bu_bo: BTreeMap<String, AttributeSpec>,
+
     // --- Lookups (case-normalized) ---
     pub(crate) node_key_by_name: HashMap<String, NodeKey>, // lower(name) → NodeKey
     pub(crate) msg_key_by_id: HashMap<u32, MessageKey>,    // id10 → MessageKey
@@ -74,6 +84,15 @@ pub struct DatabaseDBC {
 
     // Parsing state: last message seen (used by SG_ decoder)
     pub(crate) current_msg: Option<MessageKey>,
+
+    // --- Relational Attributes (BA_REL_) ---
+    // Concrete values attached to a pair of entities.
+    // Attribute names are kept sorted (BTreeMap) for stable iteration.
+    // Keys for pairs use HashMap since order is not important and SlotMap keys are hashable.
+    /// BU_SG_REL_: attributes on (Node, Signal) pairs.
+    pub bu_sg_rel_attributes: HashMap<(NodeKey, SignalKey), BTreeMap<String, AttributeValue>>,
+    /// BU_BO_REL_: attributes on (Node, Message) pairs.
+    pub bu_bo_rel_attributes: HashMap<(NodeKey, MessageKey), BTreeMap<String, AttributeValue>>,
 }
 
 impl DatabaseDBC {
@@ -334,8 +353,16 @@ impl DatabaseDBC {
             name: name.to_string(),
             bit_start,
             bit_length,
-            endian: if endian == 1 { Endianness::Intel } else { Endianness::Motorola },
-            sign: if sign == 1 { Signess::Signed } else { Signess::Unsigned },
+            endian: if endian == 1 {
+                Endianness::Intel
+            } else {
+                Endianness::Motorola
+            },
+            sign: if sign == 1 {
+                Signess::Signed
+            } else {
+                Signess::Unsigned
+            },
             factor,
             offset,
             min,
@@ -684,7 +711,7 @@ impl DatabaseDBC {
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key.
     pub fn sort_all_message_fields(&mut self) {
-        let plans: Vec<(MessageKey, Vec<NodeKey>, Vec<SignalKey>, Vec<NodeKey>)> = self
+        let plans: Vec<MessageFieldPlan> = self
             .messages
             .iter()
             .map(|(mk, msg)| {
@@ -791,3 +818,6 @@ struct NodePlan {
     signals_sent: Vec<SignalKey>,
     signals_read: Vec<SignalKey>,
 }
+
+/// Type alias to simplify clippy::type_complexity for message sorting plans.
+type MessageFieldPlan = (MessageKey, Vec<NodeKey>, Vec<SignalKey>, Vec<NodeKey>);

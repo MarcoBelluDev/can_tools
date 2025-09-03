@@ -11,7 +11,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         Some("BO_TX_BU_") => {}
         _ => return,
     }
-    
+
     // 2) ID
     let id: u32 = match parts.next() {
         Some(a) => a.parse::<u32>().unwrap_or(0),

@@ -103,13 +103,10 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             Some(m) => m,
             None => return,
         };
-        msg
-            .signals
-            .iter()
-            .copied()
-            .find(|&sk| db
-                .get_sig_by_key(sk)
-                .is_some_and(|s| s.name.eq_ignore_ascii_case(sig_name)))
+        msg.signals.iter().copied().find(|&sk| {
+            db.get_sig_by_key(sk)
+                .is_some_and(|s| s.name.eq_ignore_ascii_case(sig_name))
+        })
     };
 
     if let Some(sk) = sig_key_opt

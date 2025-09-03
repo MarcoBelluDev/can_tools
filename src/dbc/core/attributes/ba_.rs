@@ -22,11 +22,10 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     }
 
     // 2) Attribute name (e.g., "\"DBName\"")
-    let attr_tok: &str = match parts.next() {
-        Some(a) => a,
+    let attr_name: &str = match parts.next() {
+        Some(a) => a.trim_matches('"'),
         None => return,
     };
-    let attr_name: &str = attr_tok.trim_matches('"');
 
     // 3) Rebuild the remaining tail to preserve spaces inside quoted values
     let rest_joined: String = parts.collect::<Vec<_>>().join(" ");

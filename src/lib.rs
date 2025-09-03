@@ -14,15 +14,15 @@
 //!   only the index of the most recent frame and formats absolute timestamps
 //!   with a lightweight formatter.
 //! - ARXML parser: Feature is currently in development and not ready yet.
-//! Please, do not use it.
+//!   Please, do not use it.
 //!
 //! Docs updated: 2025-09-03.
 //!
-#[cfg(feature = "arxml")] 
+#[cfg(feature = "arxml")]
 pub mod arxml;
-#[cfg(feature = "asc")] 
+#[cfg(feature = "asc")]
 pub mod asc;
-#[cfg(feature = "dbc")] 
+#[cfg(feature = "dbc")]
 pub mod dbc;
 
 // Helper re-export for UI convenience (only when `asc` is enabled)
