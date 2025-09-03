@@ -26,26 +26,6 @@ pub(crate) fn has_complete_quoted_segment(s: &str) -> bool {
     count_unescaped_quotes(s) >= 2
 }
 
-// Accumulate subsequent lines until the buffer contains at least two unescaped quotes.
-//
-// - `acc` should start with the current line content.
-// - `lines` is the full file as owned Strings.
-// - `i` is the current line index; it will be advanced as lines are consumed.
-//
-// Newlines are inserted between concatenated physical lines.
-pub(crate) fn accumulate_until_two_unescaped_quotes(
-    acc: &mut String,
-    lines: &[String],
-    i: &mut usize,
-) {
-    while !has_complete_quoted_segment(acc) && *i + 1 < lines.len() {
-        *i += 1;
-        acc.push('\n');
-        // Preserve leading spaces as in original code used trim(); prefer trim_start to avoid trailing-quote issues
-        acc.push_str(lines[*i].trim_start());
-    }
-}
-
 // --- helper: collect strings within "" r ---
 pub(crate) fn collect_all_quoted(s: &str) -> Vec<String> {
     let bytes: &[u8] = s.as_bytes();
@@ -83,18 +63,5 @@ mod tests {
         assert_eq!(count_unescaped_quotes("\\\"a\\\""), 0);
         assert!(has_complete_quoted_segment("before \"x\" after"));
         assert!(!has_complete_quoted_segment("before \"x without end"));
-    }
-
-    #[test]
-    fn test_accumulate_until_two_unescaped_quotes() {
-        let lines = vec![
-            "CM_ SG_ 123 Sig \"part1".to_string(),
-            "continues\";".to_string(),
-        ];
-        let mut acc = lines[0].clone();
-        let mut i = 0usize;
-        accumulate_until_two_unescaped_quotes(&mut acc, &lines, &mut i);
-        assert!(has_complete_quoted_segment(&acc));
-        assert_eq!(i, 1);
     }
 }

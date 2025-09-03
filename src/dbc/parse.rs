@@ -2,7 +2,7 @@ use crate::dbc::core;
 use crate::dbc::types::database::DatabaseDBC;
 
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader};
 
 use encoding_rs::WINDOWS_1252;
 
@@ -52,128 +52,146 @@ pub fn from_file(path: &str) -> Result<DatabaseDBC, String> {
     let file: File = File::open(path).map_err(|e| format!("Error opening file: {}", e))?;
     let mut reader: BufReader<File> = BufReader::new(file);
 
-    // read raw bytes
-    let mut bytes: Vec<u8> = Vec::new();
-    reader
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("Read error: {}", e))?;
-
-    // Decode in Windows-1252
-    let (text, _, _) = WINDOWS_1252.decode(&bytes);
-
-    // Swap german chars with utf-8 chars
-    let mut text: String = text.into_owned();
-    text = text
-        .replace('ü', "u")
-        .replace('ö', "o")
-        .replace('ä', "a")
-        .replace('ß', "ss")
-        .replace('Ü', "U")
-        .replace('Ö', "O")
-        .replace('Ä', "A")
-        .replace('¿', "?");
-
-    // split text in lines
-    let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
-
-    // Initialize DatabaseDBC and row counter
+    // Initialize DatabaseDBC
     let mut db: DatabaseDBC = DatabaseDBC::default();
-    let mut i: usize = 0;
 
-    while i < lines.len() {
-        // Work on a trimmed-start slice to preserve inner spaces
-        let line: &str = lines[i].trim_start();
+    // Buffer for raw bytes of a line
+    let mut raw_line: Vec<u8> = Vec::with_capacity(256);
+
+    // For each line, transform german characters in UTF-8 compatible characters
+    let read_decoded_line = |reader: &mut BufReader<File>, buf: &mut Vec<u8>| -> Result<Option<String>, String> {
+        buf.clear();
+        let read = reader
+            .read_until(b'\n', buf)
+            .map_err(|e| format!("Read error: {}", e))?;
+        if read == 0 {
+            return Ok(None);
+        }
+        let (s, _, _) = WINDOWS_1252.decode(buf);
+        let src: String = s.into_owned();
+        let mut out: String = String::with_capacity(src.len());
+        for ch in src.chars() {
+            match ch {
+                'ü' => out.push('u'),
+                'ö' => out.push('o'),
+                'ä' => out.push('a'),
+                'ß' => {
+                    out.push('s');
+                    out.push('s');
+                }
+                'Ü' => out.push('U'),
+                'Ö' => out.push('O'),
+                'Ä' => out.push('A'),
+                '¿' => out.push('?'),
+                _ => out.push(ch),
+            }
+        }
+        // trim trailing CR/LF to behave like .lines()
+        while out.ends_with(['\n', '\r']) {
+            out.pop();
+        }
+        Ok(Some(out))
+    };
+
+    // Read and process each .dbc line
+    loop {
+        let Some(line) = read_decoded_line(&mut reader, &mut raw_line)? else { break };
+
+        // Work on a trimmed-start slice to preserve inner spaces elsewhere
+        let line_trimmed: &str = line.trim_start();
 
         // skip comments and empty lines
-        if line.is_empty() || line.starts_with("//") {
-            i += 1;
-            continue;
-        }
+        if line_trimmed.is_empty() || line_trimmed.starts_with("//") { continue; }
 
         // Extract first, second and third part from the line
-        let mut parts = line.split_ascii_whitespace();
+        let mut parts = line_trimmed.split_ascii_whitespace();
         let first: &str = parts.next().unwrap_or("");
         let second: &str = parts.next().unwrap_or("");
         let third: &str = parts.next().unwrap_or("");
 
         match first {
             "VERSION" => {
-                core::version::decode(&mut db, line);
+                core::version::decode(&mut db, line_trimmed);
             }
             // Some DBCs use "BU_:" while others use "BU_". Accept both.
             "BU_:" => {
-                core::bu_::decode(&mut db, line);
+                core::bu_::decode(&mut db, line_trimmed);
             }
             "BO_" => {
-                core::bo_::decode(&mut db, line);
+                core::bo_::decode(&mut db, line_trimmed);
             }
             "SG_" => {
-                core::sg_::decode(&mut db, line);
+                core::sg_::decode(&mut db, line_trimmed);
             }
             "BO_TX_BU_" => {
-                core::bo_tx_bu_::decode(&mut db, line);
+                core::bo_tx_bu_::decode(&mut db, line_trimmed);
             }
             "CM_" => {
                 if second.starts_with('"') {
                     // Network/global comment: CM_ "…";
-                    core::cm_::decode(&mut db, line);
+                    core::cm_::decode(&mut db, line_trimmed);
                 } else if second == "BO_" {
-                    core::cm_bo_::decode(&mut db, line);
+                    core::cm_bo_::decode(&mut db, line_trimmed);
                 } else if second == "SG_" {
                     // Accumulate multiline until the comment has two unescaped quotes
-                    let mut full_comment_line: String = line.to_string();
+                    let mut full_comment_line: String = line_trimmed.to_string();
                     if !core::strings::has_complete_quoted_segment(&full_comment_line) {
-                        core::strings::accumulate_until_two_unescaped_quotes(
-                            &mut full_comment_line,
-                            &lines,
-                            &mut i,
-                        );
+                        // Read subsequent lines until we close the quoted segment
+                        while let Some(next) = read_decoded_line(&mut reader, &mut raw_line)? {
+                            let next_trim = next.trim_start();
+                            full_comment_line.push('\n');
+                            full_comment_line.push_str(next_trim);
+                            if core::strings::has_complete_quoted_segment(&full_comment_line) {
+                                break;
+                            }
+                        }
                     }
                     core::cm_sg_::decode(&mut db, &full_comment_line);
                 } else if second == "BU_" {
-                    let mut full_comment_line: String = line.to_string();
+                    let mut full_comment_line: String = line_trimmed.to_string();
                     if !core::strings::has_complete_quoted_segment(&full_comment_line) {
-                        core::strings::accumulate_until_two_unescaped_quotes(
-                            &mut full_comment_line,
-                            &lines,
-                            &mut i,
-                        );
+                        while let Some(next) = read_decoded_line(&mut reader, &mut raw_line)? {
+                            let next_trim = next.trim_start();
+                            full_comment_line.push('\n');
+                            full_comment_line.push_str(next_trim);
+                            if core::strings::has_complete_quoted_segment(&full_comment_line) {
+                                break;
+                            }
+                        }
                     }
                     core::cm_bu_::decode(&mut db, &full_comment_line);
                 }
             }
             "BA_DEF_" => {
                 if second == "BU_" {
-                    core::ba_def_bu_::decode(&mut db, line);
+                    core::ba_def_bu_::decode(&mut db, line_trimmed);
                 } else if second == "BO_" {
-                    core::ba_def_bo_::decode(&mut db, line);
+                    core::ba_def_bo_::decode(&mut db, line_trimmed);
                 } else if second == "SG_" {
-                    core::ba_def_sg_::decode(&mut db, line);
+                    core::ba_def_sg_::decode(&mut db, line_trimmed);
                 } else {
-                    core::ba_def_::decode(&mut db, line);
+                    core::ba_def_::decode(&mut db, line_trimmed);
                 }
             }
             "BA_DEF_DEF_" => {
-                core::ba_def_def_::decode(&mut db, line);
+                core::ba_def_def_::decode(&mut db, line_trimmed);
             }
             "BA_" => {
                 if third == "BU_" {
-                    core::ba_bu_::decode(&mut db, line);
+                    core::ba_bu_::decode(&mut db, line_trimmed);
                 } else if third == "BO_" {
-                    core::ba_bo_::decode(&mut db, line);
+                    core::ba_bo_::decode(&mut db, line_trimmed);
                 } else if third == "SG_" {
-                    core::ba_sg_::decode(&mut db, line);
+                    core::ba_sg_::decode(&mut db, line_trimmed);
                 } else {
-                    core::ba_::decode(&mut db, line);
+                    core::ba_::decode(&mut db, line_trimmed);
                 }
             }
             "VAL_" => {
-                core::val_::decode(&mut db, line);
+                core::val_::decode(&mut db, line_trimmed);
             }
             _ => {}
         }
-
-        i += 1;
     }
 
     // re-order
