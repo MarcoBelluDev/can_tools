@@ -44,7 +44,7 @@ mod tests {
         let dt: NaiveDateTime = NaiveDateTime::new(date, time);
 
         AbsoluteTime {
-            // testo “decorativo” per il test; non viene validato
+            // Decorative text for the test; not validated
             text: "Tue Aug 05 07:23:45.123 pm 2025".into(),
             value: Some(dt),
         }

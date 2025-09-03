@@ -17,8 +17,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, text: &str) {
     let message_id: u32 = parts[2].parse::<u32>().unwrap_or(0);
     let signal_name: &str = parts[3].trim_matches('"'); // usually not quoted here
 
-    // Risolvi il SignalKey cercando per nome *dentro il messaggio*,
-    // ma chiudi il borrow immutabile di `db` in questo blocco.
+    // Resolve the SignalKey by name within the message,
+    // but keep the immutable borrow confined to this block.
     let sig_key_opt: Option<SignalKey> = {
         let msg: &MessageDBC = match db.get_message_by_id(message_id) {
             Some(m) => m,
@@ -31,7 +31,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, text: &str) {
         })
     };
 
-    // Ora puoi prendere un borrow mutabile di `db` per aggiornare il commento.
+    // Now take a mutable borrow of `db` to update the comment.
     if let Some(sig_key) = sig_key_opt
         && let Some(s) = db.get_sig_by_key_mut(sig_key)
         && let (Some(first), Some(last)) = (text.find('"'), text.rfind('"'))

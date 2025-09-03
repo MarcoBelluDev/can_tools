@@ -20,7 +20,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     let mut left_it = left.split_ascii_whitespace();
     let _sg: &str = left_it.next().unwrap_or(""); // "SG_"
     let name_token: &str = left_it.next().unwrap_or("");
-    let after_name: &str = left_it.next().unwrap_or(""); // può essere "", "M", "m0", ecc.
+    let after_name: &str = left_it.next().unwrap_or(""); // can be "", "M", "m0", etc.
 
     let name: String = name_token.to_string();
     if name.is_empty() {

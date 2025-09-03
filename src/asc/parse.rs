@@ -44,8 +44,8 @@ use crate::dbc::types::database::DatabaseDBC;
 /// - Only the **first** valid `date` header is used; subsequent lines are treated as data.
 /// - Frame parsing is delegated to `asc::line::parse`, which infers protocol
 ///   (`"CAN"` vs `"CAN FD"`) from payload length.
-/// - The `(numeric id, channel)` key uses the raw `id` string from the log (which may
-///   include an `'x'`/`'X'` suffix for extended identifiers) and `channel` as `usize`.
+/// - The `(numeric id, channel)` key uses the parsed numeric ID (`u32`, the `x`/`X` suffix
+///   is trimmed when present) and the `channel` as `u8`.
 /// - Lines may contain optional ECU tokens between `direction` and the `d` marker; the
 ///   line parser locates `d` dynamically and reads exactly `length` data bytes.
 ///

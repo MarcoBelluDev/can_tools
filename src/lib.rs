@@ -1,19 +1,22 @@
 //! # can_tools
 //!
 //! Rust utilities for parsing and modeling **automotive CAN** data.
+//! Default derive of this library include .dbc parser, .asc parser and .arxml parser
+//! Use feature flag to use only a specific feature
 //!
 //! ## Highlights
-//! - **DBC parser**: load CAN databases from `.dbc` into a SlotMap-backed
-//!   [`DatabaseDBC`](crate::dbc::types::database::DatabaseDBC).
-//! - **ASC parser**: read Vector ASCII traces (`.asc`) into a decoupled
-//!   [`CanLog`](crate::asc::types::canlog::CanLog).
-//! - **Stable keys**: Nodes/Messages/Signals use SlotMap keys that remain valid across reordering.
-//! - **Ordered iteration**: `DatabaseDBC::iter_*()` respects order vectors; use `sort_*_by_name()` to present alphabetically.
-//! - **Fast lookups**: normalized helpers (`get_message_by_id/_hex/_name`, `get_node_by_name`, `get_signal_by_name`).
-//! - **Signal decoding**: `SignalDBC::compile_inline`, `extract_raw_*`.
-//!   Conversion to `SignalLog` lives in `asc::core::signal_conversion::to_sigframe` (feature `asc`).
+//! - DBC parser: loads CAN databases from `.dbc` into a SlotMap-backed
+//!   [`DatabaseDBC`](crate::dbc::types::database::DatabaseDBC). The reader streams
+//!   the file line by line, decodes Windows‑1252, and applies a single‑pass
+//!   transliteration for a few special characters.
+//! - ASC parser: reads Vector ASCII traces (`.asc`) into a decoupled
+//!   [`CanLog`](crate::asc::types::canlog::CanLog). It keeps per `(id, channel)`
+//!   only the index of the most recent frame and formats absolute timestamps
+//!   with a lightweight formatter.
+//! - ARXML parser: Feature is currently in development and not ready yet.
+//! Please, do not use it.
 //!
-//! _Crate docs refreshed: 2025-08-22_.
+//! Docs updated: 2025-09-03.
 //!
 #[cfg(feature = "arxml")] 
 pub mod arxml;

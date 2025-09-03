@@ -6,7 +6,7 @@
 //! - [`SignalLog`]: time series for a single decoded signal (values over timestamps).
 //!
 //!
-//! _Docs refreshed: 2025-08-22_
+//! Docs updated: 2025-09-03 — absolute-time formatting and latest-frame index maintenance optimized.
 //!
 use crate::asc::types::{
     absolute_time::AbsoluteTime, canframe::CanFrame, message_log::MessageLog, signal_log::SignalLog,

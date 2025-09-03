@@ -1,37 +1,36 @@
 use crate::dbc::types::database::{DatabaseDBC, NodeKey};
 
 /// Parse `BO_TX_BU_` lines assigning transmit-capable nodes to a message.
-/// Example: `BO_TX_BU_ 123 : NodeA,NodeB;`
+/// Example: `BO_TX_BU_ 123 :NodeA,NodeB;`
 pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
-    let l: &str = line.trim();
-    if !l.starts_with("BO_TX_BU_") {
-        return;
-    }
+    // split in parts and remove final ";"
+    let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();
 
-    // Find first numeric ID
-    let id: u32 = l
-        .split_ascii_whitespace()
-        .filter_map(|w| w.parse::<u32>().ok())
-        .next()
-        .unwrap_or(0);
+    // 1) "BA_"
+    match parts.next() {
+        Some("BO_TX_BU_") => {}
+        _ => return,
+    }
+    
+    // 2) ID
+    let id: u32 = match parts.next() {
+        Some(a) => a.parse::<u32>().unwrap_or(0),
+        None => return,
+    };
+
     if id == 0 {
         return;
     }
 
-    // Take substring after the id and then after the colon
-    let after_id: &str = match l.find(&id.to_string()) {
-        Some(pos) => &l[pos + id.to_string().len()..],
+    // 3) Node Parts
+    let nodes_part: &str = match parts.next() {
+        Some(a) => a.trim_start_matches(':'),
         None => return,
     };
-    let nodes_part: &str = match after_id.find(':') {
-        Some(p) => &after_id[p + 1..],
-        None => return,
-    };
-    let nodes_part = nodes_part.trim().trim_end_matches(';');
 
     // Resolve/create NodeIds first (no &mut msg held)
     let mut node_keys: Vec<NodeKey> = Vec::new();
-    for token in nodes_part.split([',', ' ']) {
+    for token in nodes_part.split(',') {
         let name: &str = token.trim();
         if name.is_empty() {
             continue;

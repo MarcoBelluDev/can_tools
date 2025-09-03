@@ -11,7 +11,7 @@
 //! Signal decoding utilities live on [`SignalDBC`]: `compile_inline()`, `extract_raw_u64/i64()`.
 //! Conversion to `SignalLog` is provided under `asc::core::signal_conversion` when the `asc` feature is enabled.
 //!
-//! _Docs refreshed: 2025-08-22_
+//! Docs updated: 2025-09-03 — sorts now use cached keys to reduce per-compare allocations.
 //!
 
 use slotmap::{SlotMap, new_key_type};
@@ -493,19 +493,19 @@ impl DatabaseDBC {
     /// Sort nodes_by_name case insensitive
     pub fn sort_db_nodes_by_name(&mut self) {
         self.nodes_order
-            .sort_by_key(|&k| self.nodes.get(k).map(|n| n.name.to_ascii_lowercase()));
+            .sort_by_cached_key(|&k| self.nodes.get(k).map(|n| n.name.to_ascii_lowercase()));
     }
 
     /// Sort messages_by_name case insensitive
     pub fn sort_db_messages_by_name(&mut self) {
         self.messages_order
-            .sort_by_key(|&k| self.messages.get(k).map(|m| m.name.to_ascii_lowercase()));
+            .sort_by_cached_key(|&k| self.messages.get(k).map(|m| m.name.to_ascii_lowercase()));
     }
 
     /// Sort signals_by_name case insensitive
     pub fn sort_db_signals_by_name(&mut self) {
         self.signals_order
-            .sort_by_key(|&k| self.signals.get(k).map(|s| s.name.to_ascii_lowercase()));
+            .sort_by_cached_key(|&k| self.signals.get(k).map(|s| s.name.to_ascii_lowercase()));
     }
 
     /// Sort `messages_sent`, `signals_sent` and `signals_read` inside the specific given NodeDBC
@@ -519,7 +519,7 @@ impl DatabaseDBC {
 
             // messages_sent -> by MessageDBC.name
             let mut ms: Vec<MessageKey> = node.messages_sent.clone();
-            ms.sort_by_key(|&mk| {
+            ms.sort_by_cached_key(|&mk| {
                 self.get_message_by_key(mk)
                     .map(|m| m.name.to_ascii_lowercase())
                     .unwrap_or_default()
@@ -527,7 +527,7 @@ impl DatabaseDBC {
 
             // signals_sent -> by SignalDBC.name
             let mut sr1: Vec<SignalKey> = node.signals_sent.clone();
-            sr1.sort_by_key(|&sk| {
+            sr1.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
                     .unwrap_or_default()
@@ -535,7 +535,7 @@ impl DatabaseDBC {
 
             // signals_read -> by SignalDBC.name
             let mut sr2: Vec<SignalKey> = node.signals_read.clone();
-            sr2.sort_by_key(|&sk| {
+            sr2.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
                     .unwrap_or_default()
@@ -562,7 +562,7 @@ impl DatabaseDBC {
 
             // sender_nodes -> by NodeDBC.name
             let mut ns: Vec<NodeKey> = msg.sender_nodes.clone();
-            ns.sort_by_key(|&nk| {
+            ns.sort_by_cached_key(|&nk| {
                 self.get_node_by_key(nk)
                     .map(|n| n.name.to_ascii_lowercase())
                     .unwrap_or_default()
@@ -570,7 +570,7 @@ impl DatabaseDBC {
 
             // receiver_nodes -> by NodeDBC.name
             let mut rn: Vec<NodeKey> = msg.receiver_nodes.clone();
-            rn.sort_by_key(|&nk| {
+            rn.sort_by_cached_key(|&nk| {
                 self.get_node_by_key(nk)
                     .map(|n| n.name.to_ascii_lowercase())
                     .unwrap_or_default()
@@ -578,7 +578,7 @@ impl DatabaseDBC {
 
             // signals -> by SignalDBC.name
             let mut ss: Vec<SignalKey> = msg.signals.clone();
-            ss.sort_by_key(|&sk| {
+            ss.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
                     .unwrap_or_default()

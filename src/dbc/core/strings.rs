@@ -34,17 +34,17 @@ pub(crate) fn collect_all_quoted(s: &str) -> Vec<String> {
 
     while i < bytes.len() {
         if bytes[i] == b'"' {
-            i += 1; // salta l'apertura
+            i += 1; // skip opening quote
             let start = i;
             while i < bytes.len() && bytes[i] != b'"' {
                 i += 1;
             }
             if i <= bytes.len() {
                 out.push(s[start..i].to_string());
-                i += 1; // salta la chiusura
+                i += 1; // skip closing quote
                 continue;
             } else {
-                break; // virgolette non chiuse
+                break; // unclosed quotes
             }
         }
         i += 1;

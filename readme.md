@@ -3,7 +3,9 @@
 
 Rust utilities for parsing and modeling automotive CAN databases and logs.
 
-Updated 2025-08-22: uses SlotMap-backed arenas (stable keys), order-aware iteration, sorting helpers, and normalized lookups.
+Updated 2025-09-03: streaming DBC reader (Windows-1252, single-pass transliteration),
+ASC absolute-time formatting optimized, latest-frame index maintenance optimized,
+SlotMap-backed arenas (stable keys), order-aware iteration and caching in sorts.
 
 ---
 
@@ -11,12 +13,7 @@ Updated 2025-08-22: uses SlotMap-backed arenas (stable keys), order-aware iterat
 
 - DBC parsing → build an in-memory `DatabaseDBC` (nodes, messages, signals).
 - ASC parsing → parse Vector ASCII traces into a `CanLog` model.
-- ARXML parsing → extract CAN clusters into `DatabaseARXML` entries.
-- Stable keys via SlotMap → reorder presentation without invalidating references.
-- Order-aware iteration → `iter_nodes/messages/signals()` respect order vectors.
-- Sorting helpers → `sort_nodes_by_name()`, `sort_messages_by_name()`, `sort_signals_by_name()`.
-- Fast lookups → `get_message_by_id/_hex/_name`, `get_node_by_name`, `get_signal_by_name`.
-- Signal decoding → compiled bit extraction with factor/offset and value tables.
+- ARXML parsing → extract CAN clusters into `DatabaseARXML` entries. Feature is currently in development and it is not ready yet.
 
 This README documents the library API (no application/UI specifics).
 
@@ -28,7 +25,38 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-can_tools = "1.2.7"
+can_tools = "1.2.15"
+```
+
+Use only the DBC parser (disable default features):
+
+```toml
+[dependencies]
+can_tools = { version = "1.2.15", default-features = false, features = ["dbc"] }
+```
+
+Minimal usage with DBC only:
+
+```rust
+use can_tools::dbc;
+use can_tools::dbc::types::database::DatabaseDBC;
+
+fn main() -> Result<(), String> {
+    // Parse a .dbc file into an in-memory database
+    let mut db: DatabaseDBC = dbc::parse::from_file("network.dbc")?;
+
+    // Optional: sort presentation (ASCII case-insensitive)
+    db.sort_db_nodes_by_name();
+    db.sort_db_messages_by_name();
+    db.sort_db_signals_by_name();
+
+    // Iterate and use
+    for m in db.iter_messages() {
+        println!("{} ({})", m.name, m.msgtype);
+    }
+
+    Ok(())
+}
 ```
 
 ---
@@ -56,9 +84,9 @@ Sort by name (ASCII case-insensitive):
 
 ```rust
 let mut db = db;
-db.sort_nodes_by_name();
-db.sort_messages_by_name();
-db.sort_signals_by_name();
+db.sort_db_nodes_by_name();
+db.sort_db_messages_by_name();
+db.sort_db_signals_by_name();
 ```
 
 Lookups:
@@ -97,16 +125,30 @@ dbs.insert(1, dbc::parse::from_file("network.dbc")?);
 
 let log: CanLog = asc::parse::from_file("trace.asc", &dbs)?;
 
-// Walk latest frame per (id,channel)
-for idx in &log.last_id_chn_frame {
-    if let Some(frame) = log.can_frames.get(*idx) {
-        println!("ch{} @{} -> msg #{}", frame.channel, frame.timestamp, frame.message);
-    }
-}
+// Iterate all frames in file order and access their messages
+for frame in &log.can_frames {
+    let msg = &log.messages[frame.message];
+    println!(
+        "{} ch{} {} {} [{}] {}",
+        frame.absolute_time, // absolute time or synthetic fallback
+        frame.channel,
+        msg.id,              // raw id token as in the log
+        msg.name,            // may be empty if no DB was provided
+        msg.protocol,        // "CAN" or "CAN FD"
+        msg.data,            // hex payload as space-separated bytes
+    );
 
-// Resolve signals for a message index
-for sig in resolve_message_signals(&log, 0) {
-    println!("{} => {} {}", sig.name, sig.value, sig.unit);
+    // Resolve decoded signals for each frame's message
+    for sig in resolve_message_signals(&log, frame.message) {
+        println!(
+            "ch{} {}: {} => {} {}",
+            frame.channel,
+            frame.absolute_time,
+            sig.name,
+            sig.value,
+            sig.unit,
+        );
+    }
 }
 ```
 

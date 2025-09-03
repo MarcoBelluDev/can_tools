@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime};
+use chrono::{Duration, NaiveDateTime, Datelike, Timelike};
 use std::collections::HashMap;
 
 use crate::asc::types::{
@@ -14,7 +14,7 @@ pub(crate) fn parse(
     line: &str,
     log: &mut CanLog,
     db_list: &HashMap<u8, DatabaseDBC>,
-    latesy_by_id_channel: &mut HashMap<(u32, u8), usize>,
+    latest_by_id_channel: &mut HashMap<(u32, u8), usize>,
     chart_by_key: &mut HashMap<String, usize>,
 ) {
     // split line by whitespaces (ASCII only, faster than Unicode-aware split)
@@ -81,14 +81,13 @@ pub(crate) fn parse(
     }
 
     // absolute time of the single CanFrame
-    let absolute_time: String;
-    if let Some(start_time) = log.absolute_time.value {
-        let seconds: Duration = Duration::milliseconds((timestamp * 1000.0).round() as i64);
-        let abs_time_value: NaiveDateTime = start_time + seconds;
-        absolute_time = abs_time_value.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+    let absolute_time: String = if let Some(start_time) = log.absolute_time.value {
+        let delta_ms: i64 = (timestamp * 1000.0).round() as i64;
+        let abs_time_value: NaiveDateTime = start_time + Duration::milliseconds(delta_ms);
+        format_datetime_ymdhms_millis(abs_time_value)
     } else {
-        absolute_time = seconds_to_hms_string(timestamp);
-    }
+        seconds_to_hms_string(timestamp)
+    };
 
     let mut name: String = String::new();
     let mut sender_node: String = String::new();
@@ -203,17 +202,7 @@ pub(crate) fn parse(
     let key: (u32, u8) = (id_num, log.can_frames[idx].channel);
 
     // Update: keep largest timestamp per (id, channel)
-    match latesy_by_id_channel.get_mut(&key) {
-        Some(last_idx) => {
-            if log.can_frames[idx].timestamp > log.can_frames[*last_idx].timestamp {
-                *last_idx = idx;
-            }
-        }
-        None => {
-            latesy_by_id_channel.insert(key, idx);
-        }
-    }
-    latesy_by_id_channel
+    latest_by_id_channel
         .entry(key)
         .and_modify(|existing_idx| {
             let existing_ts = log.can_frames[*existing_idx].timestamp;
@@ -237,6 +226,51 @@ fn seconds_to_hms_string(seconds: f32) -> String {
         "2025-01-01 {:02}:{:02}:{:02}.{:03}",
         hours, minutes, secs, millis
     )
+}
+
+// Fast formatter: YYYY-MM-DD HH:MM:SS.mmm
+fn format_datetime_ymdhms_millis(dt: NaiveDateTime) -> String {
+    let year: i32 = dt.year();
+    let month: u32 = dt.month();
+    let day: u32 = dt.day();
+    let hour: u32 = dt.hour();
+    let minute: u32 = dt.minute();
+    let second: u32 = dt.second();
+    let millis: u32 = dt.and_utc().timestamp_subsec_millis();
+
+    let mut out = String::with_capacity(23);
+    out.push_str(&year.to_string());
+    out.push('-');
+    push_2(&mut out, month);
+    out.push('-');
+    push_2(&mut out, day);
+    out.push(' ');
+    push_2(&mut out, hour);
+    out.push(':');
+    push_2(&mut out, minute);
+    out.push(':');
+    push_2(&mut out, second);
+    out.push('.');
+    push_3(&mut out, millis);
+    out
+}
+
+#[inline]
+fn push_2(buf: &mut String, v: u32) {
+    let d1 = ((v / 10) % 10) as u8 + b'0';
+    let d2 = (v % 10) as u8 + b'0';
+    buf.push(d1 as char);
+    buf.push(d2 as char);
+}
+
+#[inline]
+fn push_3(buf: &mut String, v: u32) {
+    let d1 = ((v / 100) % 10) as u8 + b'0';
+    let d2 = ((v / 10) % 10) as u8 + b'0';
+    let d3 = (v % 10) as u8 + b'0';
+    buf.push(d1 as char);
+    buf.push(d2 as char);
+    buf.push(d3 as char);
 }
 
 /// Turn "3E 42 03 00 39 00 03 01" into Vec<u8>.
