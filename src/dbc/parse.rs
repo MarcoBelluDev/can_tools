@@ -100,7 +100,8 @@ pub fn from_file(path: &str) -> Result<DatabaseDBC, String> {
             "VERSION" => {
                 core::version::decode(&mut db, line);
             }
-            "BU_" => {
+            // Some DBCs use "BU_:" while others use "BU_". Accept both.
+            "BU_:" => {
                 core::bu_::decode(&mut db, line);
             }
             "BO_" => {

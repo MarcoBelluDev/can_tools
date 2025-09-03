@@ -162,11 +162,7 @@ impl DatabaseDBC {
             return r;
         }
 
-        let sender_node_id = if !sender_name.is_empty() {
-            Some(self.add_node_if_absent(sender_name))
-        } else {
-            None
-        };
+        let node: Option<NodeKey> = self.get_node_key_by_name(sender_name);
 
         let id_hex: String = id_hex.to_string();
         let id_format: IdFormat = if id > 2048 {
@@ -187,7 +183,7 @@ impl DatabaseDBC {
             } else {
                 "CAN FD".into()
             },
-            sender_nodes: sender_node_id.into_iter().collect(),
+            sender_nodes: node.into_iter().collect(),
             receiver_nodes: Vec::new(),
             signals: Vec::new(),
             comment: String::new(),
@@ -201,7 +197,7 @@ impl DatabaseDBC {
         self.msg_key_by_hex.insert(id_hex, msg_key);
         self.msg_key_by_name.insert(name.to_lowercase(), msg_key);
 
-        if let Some(nid) = sender_node_id
+        if let Some(nid) = node
             && let Some(n) = self.nodes.get_mut(nid)
         {
             n.messages_sent.push(msg_key);
