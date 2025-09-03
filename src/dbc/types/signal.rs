@@ -4,7 +4,7 @@ use crate::dbc::types::{
     message::MuxInfo,
     node::NodeDBC,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// Elementary step for extracting a bit field from a payload.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -52,7 +52,7 @@ pub struct SignalDBC {
     /// Associated comment (DBC `CM_ SG_` section).
     pub comment: String,
     /// Value-to-text mapping (value table).
-    pub value_table: HashMap<i32, String>,
+    pub value_table: BTreeMap<i32, String>,
     // Precomputed extraction steps for fast decoding.
     pub(crate) steps: Vec<Step>,
     /// Multiplexing metadata (None if not multiplexed).

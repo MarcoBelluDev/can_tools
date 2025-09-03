@@ -343,7 +343,7 @@ impl DatabaseDBC {
             unit_of_measurement: unit.to_string(),
             receiver_nodes,
             comment: String::new(),
-            value_table: HashMap::new(),
+            value_table: BTreeMap::new(),
             steps: Vec::new(),
             mux,
         };

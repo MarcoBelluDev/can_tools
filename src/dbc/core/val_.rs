@@ -1,5 +1,5 @@
 use crate::dbc::types::database::DatabaseDBC;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Parse a VAL_ line that defines a value table for a specific signal:
 /// `VAL_ <MessageID> <SignalName> <value> "<desc>" ... ;`
@@ -18,7 +18,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
 
     // Collect pairs: numeric value followed by quoted description
-    let mut table: HashMap<i32, String> = HashMap::new();
+    let mut table: BTreeMap<i32, String> = BTreeMap::new();
     let mut t = tokens.peekable();
     while let Some(val_tok) = t.next() {
         if val_tok.ends_with(';') {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::asc::types::canframe::CanFrame;
 
@@ -29,7 +29,7 @@ pub struct SignalLog {
     /// Optional comment at signal level.
     pub comment: String,
     /// Value mapping table.
-    pub value_table: HashMap<i32, String>,
+    pub value_table: BTreeMap<i32, String>,
     /// Time series of `[timestamp, value]` pairs (timestamp in seconds).
     pub values: Vec<[f64; 2]>,
 }
@@ -47,7 +47,7 @@ impl SignalLog {
         self.unit.clear();
         self.text.clear();
         self.comment.clear();
-        self.value_table = HashMap::default();
+        self.value_table = BTreeMap::default();
         self.values = Vec::default();
     }
 
