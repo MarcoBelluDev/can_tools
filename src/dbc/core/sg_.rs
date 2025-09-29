@@ -1,6 +1,7 @@
 use crate::dbc::types::{
-    database::{DatabaseDBC, NodeKey, SignalKey},
+    database::{DatabaseDBC, NodeKey, SignalKey, MessageKey},
     message::{MuxRole, MuxSelector},
+    signal::{Endianness, Signess},
 };
 
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
@@ -53,11 +54,22 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     let mut pos_len = bit_pos_len.split('|');
     let bit_start: u16 = pos_len.next().unwrap_or("0").parse().unwrap_or(0);
     let bit_length: u16 = pos_len.next().unwrap_or("0").parse().unwrap_or(0);
-    let endian: u8 = es.chars().next().unwrap_or('1').to_digit(10).unwrap_or(1) as u8;
-    let sign: u8 = if es.chars().nth(1).unwrap_or('+') == '-' {
+    let endian_value: u8 = es.chars().next().unwrap_or('1').to_digit(10).unwrap_or(1) as u8;
+    let sign_value: u8 = if es.chars().nth(1).unwrap_or('+') == '-' {
         1
     } else {
         0
+    };
+
+    let endian= if endian_value == 1 {
+        Endianness::Intel
+    } else {
+        Endianness::Motorola
+    };
+    let sign= if sign_value == 1 {
+        Signess::Signed
+    } else {
+        Signess::Unsigned
     };
 
     // 2) "(factor,offset)"
@@ -146,10 +158,9 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         }
     }
 
-    let sig_key: SignalKey = db.add_signal_if_absent(
+    // create the signal
+    let sig_key: SignalKey = db.add_signal(
         &name,
-        bit_start,
-        bit_length,
         endian,
         sign,
         factor,
@@ -157,13 +168,31 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         min,
         max,
         &unit,
-        receiver_nodes.clone(),
-        mux_role,
-        mux_selector,
     );
 
+    // add receiver nodes
+    for node_key in receiver_nodes.iter().copied() {
+        let _ = db.add_sig_receiver_node(sig_key, node_key);
+    }
+
+    // add Message relation and multiplexing info
+    let msg_key: MessageKey = match db.current_msg {
+        Some(k) => k,
+        // Create a fallback message if an SG_ appears before any BO_ (rare).
+        None => match db.add_message("_Independent_Signal_", 0, 8) {
+            Ok(k) => k,
+            Err(_) => match db.get_msg_key_by_name("_Independent_Signal_") {
+                Some(existing) => existing,
+                None => return,
+            },
+        },
+    };
+    db.current_msg = Some(msg_key);
+
+    let _ = db.add_msg_sig_relation(sig_key, msg_key, bit_start, bit_length, mux_role, mux_selector);
+
     // Back-link: for each receiver node, add this SignalKey in the signals_read vector
-    for nk in receiver_nodes {
+    for nk in receiver_nodes.iter().copied() {
         if let Some(node) = db.get_node_by_key_mut(nk)
             && !node.signals_read.contains(&sig_key)
         {

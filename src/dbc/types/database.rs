@@ -179,67 +179,6 @@ impl DatabaseDBC {
 
     // ------------- Messages ------------
     // Adds a message and indexes its id/name. Also sets `current_msg` for subsequent SG_ lines.
-    pub(crate) fn add_message_from_bo_line(
-        &mut self,
-        name: &str,
-        id: u32,
-        byte_length: u16,
-        sender_name: &str,
-    ) -> MessageKey {
-        // check if message with provided name already exist
-        if let Some(r) = self.get_msg_key_by_name(name) {
-            self.current_msg = Some(r); // set found message as current_msg
-            return r;
-        }
-
-        let node: Option<NodeKey> = self.get_node_key_by_name(sender_name);
-
-        let id_hex: String = id_to_hex(id).to_string();
-
-        let id_format: IdFormat = if id > 2048 {
-            IdFormat::Extended
-        } else {
-            IdFormat::Standard
-        };
-
-        let msg_key: MessageKey = self.messages.insert(MessageDBC {
-            attributes: BTreeMap::default(),
-            id_format,
-            id,
-            id_hex: id_hex.clone(),
-            name: name.to_string(),
-            byte_length,
-            msgtype: if byte_length <= 8 {
-                "CAN".into()
-            } else {
-                "CAN FD".into()
-            },
-            sender_nodes: node.into_iter().collect(),
-            receiver_nodes: Vec::new(),
-            signals: Vec::new(),
-            comment: String::new(),
-            mux_multiplexors: Vec::new(),
-            mux_cases: HashMap::new(),
-        });
-
-        self.messages_order.push(msg_key);
-
-        self.msg_key_by_id.insert(id, msg_key);
-        self.msg_key_by_hex.insert(id_hex, msg_key);
-        self.msg_key_by_name.insert(name.to_lowercase(), msg_key);
-
-        // add message in NodeDBC.messages_sent
-        if let Some(nid) = node
-            && let Some(n) = self.nodes.get_mut(nid)
-        {
-            n.messages_sent.push(msg_key);
-        }
-
-        self.current_msg = Some(msg_key); // set created message as current_msg
-        msg_key
-    }
-
-    // Adds a message and indexes its id/name. Also sets `current_msg` for subsequent SG_ lines.
     pub fn add_message(
         &mut self,
         name: &str,
@@ -345,110 +284,119 @@ impl DatabaseDBC {
     }
 
     // -------------- Signals ------------
-    /// Adds a signal to the database if not already present and returns the corresponding `SignalKey`.
-    /// valid only during construction of DB from .dbc because of current_message!
+    /// Adds a signal to the database and returns the corresponding `SignalKey`.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_signal_if_absent(
+    pub fn add_signal(
         &mut self,
         name: &str,
-        bit_start: u16,
-        bit_length: u16,
-        endian: u8,
-        sign: u8,
+        endian: Endianness,
+        sign: Signess,
         factor: f64,
         offset: f64,
         min: f64,
         max: f64,
         unit: &str,
-        receiver_nodes: Vec<NodeKey>,
-        mux_role: MuxRole,
-        mux_selector: Option<MuxSelector>,
     ) -> SignalKey {
-        if let Some(r) = self.get_sig_key_by_name(name) {
-            return r;
-        }
-
-        let msg_key: MessageKey = match self.current_msg {
-            Some(k) => k,
-            None => {
-                // Create a fallback message if an SG_ appears before any BO_ (rare).
-                self.add_message_from_bo_line("__UNBOUND__", 0, 8, "")
-            }
-        };
-
-        // if signal is Multiplexed, try to guess the Multiplexor if there is only one in the message
-        let inferred_switch: Option<SignalKey> = if mux_role == MuxRole::Multiplexed {
-            if let Some(msg) = self.get_message_by_key(msg_key) {
-                if msg.mux_multiplexors.len() == 1 {
-                    Some(msg.mux_multiplexors[0])
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let mux: Option<MuxInfo> = if mux_role == MuxRole::None {
-            None
-        } else {
-            Some(MuxInfo {
-                role: mux_role,
-                group: 0,
-                switch: inferred_switch,
-                selector: mux_selector.clone().unwrap_or_default(),
-            })
-        };
-
-        // We'll need receiver_nodes later to aggregate into MessageDBC.receiver_nodes
-        let msg_receivers: Vec<NodeKey> = receiver_nodes.clone();
-
         let mut sig: SignalDBC = SignalDBC {
-            attributes: BTreeMap::default(),
-            message: msg_key,
             name: name.to_string(),
-            bit_start,
-            bit_length,
-            endian: if endian == 1 {
-                Endianness::Intel
-            } else {
-                Endianness::Motorola
-            },
-            sign: if sign == 1 {
-                Signess::Signed
-            } else {
-                Signess::Unsigned
-            },
+            endian,
+            sign,
             factor,
             offset,
             min,
             max,
             unit_of_measurement: unit.to_string(),
-            receiver_nodes,
-            comment: String::new(),
-            value_table: BTreeMap::new(),
-            steps: Vec::new(),
-            mux,
+            ..Default::default()
         };
         sig.compile_inline();
 
         let sig_key: SignalKey = self.signals.insert(sig);
         self.signals_order.push(sig_key);
+        self.sig_key_by_name.insert(name.to_lowercase(), sig_key);
 
-        // add the signal within current message
-        if let Some(m) = self.messages.get_mut(msg_key)
-            && !m.signals.contains(&sig_key)
-        {
-            m.signals.push(sig_key);
+        sig_key
+    }
+
+    pub fn add_sig_receiver_node(
+        &mut self,
+        sig_key: SignalKey,
+        node_key: NodeKey,
+    ) -> Result<(), String> {
+        let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
+            return Err("Signal not found for given SignalKey".to_string())
+        };
+
+        // add the NodeKey to SignalDBC if not already present
+        if !signal.receiver_nodes.contains(&node_key) {
+            signal.receiver_nodes.push(node_key);
         }
 
-        // Aggregate receivers at message level (union of all signal receivers)
-        if let Some(m) = self.get_message_by_key_mut(msg_key) {
-            for nk in msg_receivers {
-                if !m.receiver_nodes.contains(&nk) {
-                    m.receiver_nodes.push(nk);
+        Ok(())
+    }
+
+    pub fn add_msg_sig_relation(
+        &mut self,
+        sig_key: SignalKey,
+        msg_key: MessageKey,
+        bit_start: u16,
+        bit_length: u16,
+        mux_role: MuxRole,
+        mux_selector: Option<MuxSelector>,
+    ) -> Result<SignalKey, String> {
+        // if signal is Multiplexed, try to guess the Multiplexor if there is only one in the message
+        let inferred_switch: Option<SignalKey> = if mux_role == MuxRole::Multiplexed {
+            self.get_message_by_key(msg_key).and_then(|msg| {
+                if msg.mux_multiplexors.len() == 1 {
+                    Some(msg.mux_multiplexors[0])
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
+
+        // We'll need receiver_nodes later to aggregate into MessageDBC.receiver_nodes
+        let msg_receivers: Vec<NodeKey> = {
+            let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
+                return Err("Signal not found for given SignalKey".to_string());
+            };
+
+            // update relevant signal fields
+            signal.message = msg_key;
+            signal.bit_start = bit_start;
+            signal.bit_length = bit_length;
+            signal.mux = if mux_role == MuxRole::None {
+                None
+            } else {
+                Some(MuxInfo {
+                    role: mux_role,
+                    group: 0,
+                    switch: inferred_switch,
+                    selector: mux_selector.clone().unwrap_or_default(),
+                })
+            };
+
+            signal.steps.clear();
+            signal.compile_inline();
+
+            signal.receiver_nodes.clone()
+        };
+
+        {
+            let Some(message) = self.get_message_by_key_mut(msg_key) else {
+                return Err("Message not found for the provided MessageKey.".to_string());
+            };
+
+            // add the signal within current message
+            if !message.signals.contains(&sig_key) {
+                message.signals.push(sig_key);
+            }
+
+            // Aggregate receivers at message level (union of all signal receivers)
+            for nk in &msg_receivers {
+                if !message.receiver_nodes.contains(nk) {
+                    message.receiver_nodes.push(*nk);
                 }
             }
         }
@@ -456,17 +404,15 @@ impl DatabaseDBC {
         // Also back-link: for each sender node of this message, mark this signal as sent
         // This keeps NodeDBC.signals_sent consistent when the transmitter is specified on BO_
         // and SG_ lines are parsed afterwards (common case without BO_TX_BU_ lines).
-        {
-            let sender_nodes: Vec<NodeKey> = self
-                .get_message_by_key(msg_key)
-                .map(|m| m.sender_nodes.clone())
-                .unwrap_or_default();
-            for nk in sender_nodes {
-                if let Some(node) = self.get_node_by_key_mut(nk)
-                    && !node.signals_sent.contains(&sig_key)
-                {
-                    node.signals_sent.push(sig_key);
-                }
+        let sender_nodes: Vec<NodeKey> = self
+            .get_message_by_key(msg_key)
+            .map(|m| m.sender_nodes.clone())
+            .unwrap_or_default();
+        for nk in sender_nodes {
+            if let Some(node) = self.get_node_by_key_mut(nk)
+                && !node.signals_sent.contains(&sig_key)
+            {
+                node.signals_sent.push(sig_key);
             }
         }
 
@@ -484,7 +430,9 @@ impl DatabaseDBC {
                 // link dependant signals with no Multiplexor yet to this new Multiplexor
                 // Usually, this should never happen because Multiplexor must always be first line in a message
                 let dep_to_attach: Vec<(SignalKey, MuxSelector)> = {
-                    let msg: &MessageDBC = self.get_message_by_key(msg_key).unwrap();
+                    let Some(msg) = self.get_message_by_key(msg_key) else {
+                        return Err("Message missing while updating multiplexor relation.".to_string());
+                    };
                     msg.signals
                         .iter()
                         .copied()
@@ -505,11 +453,12 @@ impl DatabaseDBC {
                     // set the Multiplexor to the signal
                     if let Some(s) = self.get_sig_by_key_mut(sk)
                         && let Some(mi) = s.mux.as_mut()
-                        && mi.role == MuxRole::Multiplexor
+                        && mi.role == MuxRole::Multiplexed
                         && mi.switch.is_none()
                     {
                         mi.switch = Some(sig_key);
                     }
+
                     // Update the map of the message
                     if let Some(m) = self.get_message_by_key_mut(msg_key) {
                         let by_sel = m.mux_cases.entry(sig_key).or_default();
@@ -518,19 +467,18 @@ impl DatabaseDBC {
                 }
             }
             MuxRole::Multiplexed => {
-                if let Some(sw) = inferred_switch
-                    && let Some(m) = self.get_message_by_key_mut(msg_key)
-                {
-                    let by_sel = m.mux_cases.entry(sw).or_default();
-                    if let Some(sel) = mux_selector {
-                        by_sel.entry(sel.clone()).or_default().push(sig_key);
+                if let Some(sw) = inferred_switch {
+                    if let Some(m) = self.get_message_by_key_mut(msg_key) {
+                        let by_sel = m.mux_cases.entry(sw).or_default();
+                        if let Some(sel) = mux_selector.clone() {
+                            by_sel.entry(sel).or_default().push(sig_key);
+                        }
                     }
                 }
             }
         }
 
-        self.sig_key_by_name.insert(name.to_lowercase(), sig_key);
-        sig_key
+        Ok(sig_key)
     }
 
     pub fn get_sig_key_by_name(&self, name: &str) -> Option<SignalKey> {
