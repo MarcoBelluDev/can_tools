@@ -38,7 +38,7 @@ pub struct MessageDBC {
     // --- Message Attribute Entry ---
     pub attributes: BTreeMap<String, AttributeValue>,
 
-    /// Fast lookup: for each Multiplexer -> for each selector -> signals gated by that selector.
+    /// Fast lookup: for each Multiplexor -> for each selector -> signals gated by that selector.
     ///
     /// Example: mux_cases[Motor_MUX][Value(0)] = [Motor_status, Motor_Direction, ...]
     pub mux_cases: HashMap<SignalKey, HashMap<MuxSelector, Vec<SignalKey>>>,

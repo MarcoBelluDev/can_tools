@@ -63,6 +63,6 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     // Update the nodes
     for &nk in &node_keys {
-        db.add_tx_msg_for_node(nk, msg_key);
+        let _ = db.add_sender_relation(msg_key, nk);
     }
 }

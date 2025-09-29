@@ -1,17 +1,5 @@
 use crate::dbc::types::database::DatabaseDBC;
 
-const CAN_EFF_MASK: u32 = 0x1FFF_FFFF; // 29 bit
-const CAN_SFF_MASK: u32 = 0x0000_07FF; // 11 bit
-
-#[inline]
-fn id_to_hex(id: u32) -> String {
-    if id <= CAN_SFF_MASK {
-        format!("0x{:03X}", id)
-    } else {
-        format!("0x{:08X}", id & CAN_EFF_MASK)
-    }
-}
-
 /// Decode a `BO_` line robustly using `:` as separator between name and length.
 /// Accepts both: `BO_ 123 NAME: 8 Node` and `BO_ 123 NAME : 8 Node`.
 pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
@@ -41,7 +29,11 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     let byte_length: u16 = it.next().and_then(|t| t.parse::<u16>().ok()).unwrap_or(0);
     let sender_name: &str = it.next().unwrap_or("").trim_end_matches(';');
 
-    let id_hex: String = id_to_hex(id);
-
-    db.add_message_if_absent(&name, id, &id_hex, byte_length, sender_name);
+    // create the message
+    if let Ok(msg_key) = db.add_message(&name, id, byte_length) {
+        // if Result Ok, add sender_node
+        if let Some(node_key) = db.get_node_key_by_name(sender_name) {
+            let _ = db.add_sender_relation(msg_key, node_key);
+        }
+    }
 }

@@ -13,8 +13,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     for name in parts {
         let name = name.trim();
         if !name.is_empty() {
-            // creates if missing, returns existing rif otherwise
-            db.add_node_if_absent(name);
+            // creates the node and ignore the NodeKey returned
+            let _ = db.add_node(name);
         }
     }
 }

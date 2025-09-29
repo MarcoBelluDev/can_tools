@@ -97,10 +97,11 @@ pub struct DatabaseDBC {
 
 impl DatabaseDBC {
     // --------- Nodes --------
-    /// Adds a node to the database if not already present and returns the corresponding `NodeKey`.
-    pub fn add_node_if_absent(&mut self, name: &str) -> NodeKey {
-        if let Some(r) = self.get_node_key_by_name(name) {
-            return r;
+    /// Adds a node to the database and returns the corresponding `NodeKey`.
+    pub fn add_node(&mut self, name: &str) -> Result<NodeKey, String> {
+        // check that the node name is not already present
+        if self.get_node_key_by_name(name).is_some() {
+            return Err("Node name already present.".to_string());
         }
         let key: NodeKey = self.nodes.insert(NodeDBC {
             name: name.to_string(),
@@ -108,38 +109,48 @@ impl DatabaseDBC {
         });
         self.nodes_order.push(key);
         self.node_key_by_name.insert(name.to_lowercase(), key);
-        key
+        Ok(key)
     }
 
-    /// Insert `MessageKey` in `messages_sent` of Node `nk`. No duplicates.
-    pub fn add_tx_msg_for_node(&mut self, nk: NodeKey, msg_key: MessageKey) {
-        // Check that the message exist
-        if self.get_message_by_key(msg_key).is_none() {
-            return;
-        }
-
-        // take signals of the message as immutable borrow
+    /// Link a sender node to a message, keeping both sides in sync.
+    pub fn add_sender_relation(
+        &mut self,
+        msg_key: MessageKey,
+        node_key: NodeKey,
+    ) -> Result<(), String> {
         let msg_signals: Vec<SignalKey> = {
-            let Some(msg) = self.get_message_by_key(msg_key) else {
-                return;
+            // check that a MessageDBC exist for given MessageKey
+            let Some(message) = self.get_message_by_key_mut(msg_key) else {
+                return Err("Message not found for the provided MessageKey.".into());
             };
-            msg.signals.clone()
+
+            // add the NodeKey to MessageDBC if not already present
+            if !message.sender_nodes.contains(&node_key) {
+                message.sender_nodes.push(node_key);
+            }
+
+            // clone the signals inside the message to avoid borrow issues
+            message.signals.clone()
         };
 
-        // Update the node taking it as mutable borrow
-        if let Some(node) = self.get_node_by_key_mut(nk) {
-            // trasmitted message update
-            if !node.messages_sent.contains(&msg_key) {
-                node.messages_sent.push(msg_key);
-            }
+        // check that a NodeDBC exist for given NodeKey
+        let Some(node) = self.get_node_by_key_mut(node_key) else {
+            return Err("Node not found for the provided NodeKey.".into());
+        };
 
-            // trasmitted signals update
-            for sk in msg_signals {
-                if !node.signals_sent.contains(&sk) {
-                    node.signals_sent.push(sk);
-                }
+        // add the MessageKey to NodeDBC if not already present
+        if !node.messages_sent.contains(&msg_key) {
+            node.messages_sent.push(msg_key);
+        }
+
+        // add the SignalKeys to NodeDBC if not already present
+        for signal_key in msg_signals {
+            if !node.signals_sent.contains(&signal_key) {
+                node.signals_sent.push(signal_key);
             }
         }
+
+        Ok(())
     }
 
     pub fn get_node_key_by_name(&self, name: &str) -> Option<NodeKey> {
@@ -167,23 +178,24 @@ impl DatabaseDBC {
     }
 
     // ------------- Messages ------------
-    /// Adds a message and indexes its id/name. Also sets `current_msg` for subsequent SG_ lines.
-    pub(crate) fn add_message_if_absent(
+    // Adds a message and indexes its id/name. Also sets `current_msg` for subsequent SG_ lines.
+    pub(crate) fn add_message_from_bo_line(
         &mut self,
         name: &str,
         id: u32,
-        id_hex: &str,
         byte_length: u16,
         sender_name: &str,
     ) -> MessageKey {
+        // check if message with provided name already exist
         if let Some(r) = self.get_msg_key_by_name(name) {
-            self.current_msg = Some(r);
+            self.current_msg = Some(r); // set found message as current_msg
             return r;
         }
 
         let node: Option<NodeKey> = self.get_node_key_by_name(sender_name);
 
-        let id_hex: String = id_hex.to_string();
+        let id_hex: String = id_to_hex(id).to_string();
+
         let id_format: IdFormat = if id > 2048 {
             IdFormat::Extended
         } else {
@@ -216,14 +228,60 @@ impl DatabaseDBC {
         self.msg_key_by_hex.insert(id_hex, msg_key);
         self.msg_key_by_name.insert(name.to_lowercase(), msg_key);
 
+        // add message in NodeDBC.messages_sent
         if let Some(nid) = node
             && let Some(n) = self.nodes.get_mut(nid)
         {
             n.messages_sent.push(msg_key);
         }
 
-        self.current_msg = Some(msg_key);
+        self.current_msg = Some(msg_key); // set created message as current_msg
         msg_key
+    }
+
+    // Adds a message and indexes its id/name. Also sets `current_msg` for subsequent SG_ lines.
+    pub fn add_message(
+        &mut self,
+        name: &str,
+        id: u32,
+        byte_length: u16,
+    ) -> Result<MessageKey, String> {
+        // check if message with provided name already exist
+        if let Some(r) = self.get_msg_key_by_name(name) {
+            self.current_msg = Some(r); // set found message as current_msg
+            return Err("Message name already present.".to_string());
+        }
+
+        let id_hex: String = id_to_hex(id).to_string();
+
+        let id_format: IdFormat = if id > 2048 {
+            IdFormat::Extended
+        } else {
+            IdFormat::Standard
+        };
+
+        let msg_key: MessageKey = self.messages.insert(MessageDBC {
+            id_format,
+            id,
+            id_hex: id_hex.clone(),
+            name: name.to_string(),
+            byte_length,
+            msgtype: if byte_length <= 8 {
+                "CAN".into()
+            } else {
+                "CAN FD".into()
+            },
+            ..Default::default()
+        });
+
+        self.messages_order.push(msg_key);
+
+        self.msg_key_by_id.insert(id, msg_key);
+        self.msg_key_by_hex.insert(id_hex, msg_key);
+        self.msg_key_by_name.insert(name.to_lowercase(), msg_key);
+
+        self.current_msg = Some(msg_key); // set created message as current_msg
+        Ok(msg_key)
     }
 
     pub fn get_msg_key_by_name(&self, name: &str) -> Option<MessageKey> {
@@ -314,7 +372,7 @@ impl DatabaseDBC {
             Some(k) => k,
             None => {
                 // Create a fallback message if an SG_ appears before any BO_ (rare).
-                self.add_message_if_absent("__UNBOUND__", 0, "0x0", 8, "")
+                self.add_message_from_bo_line("__UNBOUND__", 0, 8, "")
             }
         };
 
@@ -821,3 +879,15 @@ struct NodePlan {
 
 /// Type alias to simplify clippy::type_complexity for message sorting plans.
 type MessageFieldPlan = (MessageKey, Vec<NodeKey>, Vec<SignalKey>, Vec<NodeKey>);
+
+const CAN_EFF_MASK: u32 = 0x1FFF_FFFF; // 29 bit
+const CAN_SFF_MASK: u32 = 0x0000_07FF; // 11 bit
+
+#[inline]
+fn id_to_hex(id: u32) -> String {
+    if id <= CAN_SFF_MASK {
+        format!("0x{:03X}", id)
+    } else {
+        format!("0x{:08X}", id & CAN_EFF_MASK)
+    }
+}
