@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeValue},
+    attributes::{AttrType, AttributeDef, AttributeSpec, AttributeValue},
     database::DatabaseDBC,
 };
 
@@ -55,12 +55,14 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         rest
     };
 
-    // 8) immutable borrow to read the attribute definition
-    let attr_def = match db
-        .sig_attr_spec
-        .get(attr_name)
-        .and_then(|spec| spec.def.as_ref())
-    {
+    // immutable borrow to Attribute Specification
+    let attr_spec: &AttributeSpec = match db.node_attr_spec.get(attr_name) {
+        Some(spec) => spec,
+        None => return, // exit immediately
+    };
+
+    // immutable borrow to Attribute Definition
+    let attr_def: &AttributeDef = match attr_spec.def.as_ref() {
         Some(d) => d,
         None => return,
     };
@@ -111,7 +113,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     if let Some(sk) = sig_key_opt
         && let Some(sig) = db.get_sig_by_key_mut(sk)
+        && let Some(slot) = sig.attributes.get_mut(attr_name)
     {
-        sig.attributes.insert(attr_name.to_string(), attr_value);
+        *slot = attr_value;
     }
 }

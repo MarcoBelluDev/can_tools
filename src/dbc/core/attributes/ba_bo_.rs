@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeValue},
+    attributes::{AttrType, AttributeDef, AttributeSpec, AttributeValue},
     database::DatabaseDBC,
 };
 
@@ -50,12 +50,14 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         rest
     };
 
-    // 7) immutable borrow to read the attribute definition
-    let attr_def = match db
-        .msg_attr_spec
-        .get(attr_name)
-        .and_then(|spec| spec.def.as_ref())
-    {
+    // 7) immutable borrow to Attribute Specification
+    let attr_spec: &AttributeSpec = match db.msg_attr_spec.get(attr_name) {
+        Some(spec) => spec,
+        None => return, // exit immediately
+    };
+
+    // 8) immutable borrow to Attribute Definition
+    let attr_def: &AttributeDef = match attr_spec.def.as_ref() {
         Some(d) => d,
         None => return,
     };
@@ -92,8 +94,10 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         }
     };
 
-    // 8) assign the value (lookup by ID)
-    if let Some(msg) = db.get_message_by_id_mut(msg_id) {
-        msg.attributes.insert(attr_name.to_string(), attr_value);
+    // 9) assign the value (lookup by ID)
+    if let Some(msg) = db.get_message_by_id_mut(msg_id)
+        && let Some(slot) = msg.attributes.get_mut(attr_name)
+    {
+        *slot = attr_value;
     }
 }

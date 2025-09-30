@@ -222,6 +222,8 @@ pub enum Endianness {
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum Signess {
     #[default]
-    Unsigned, // 0
-    Signed, // 1
+    Unsigned, // -
+    Signed,     // +
+    IeeeFloat,  // SIG_VALTYPE = 1
+    IeeeDouble, // SIG_VALTYPE = 1
 }

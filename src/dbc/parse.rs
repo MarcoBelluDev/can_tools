@@ -204,6 +204,9 @@ pub fn from_file(path: &str) -> Result<DatabaseDBC, String> {
             "VAL_" => {
                 core::val_::decode(&mut db, line_trimmed);
             }
+            "SIG_VALTYPE_" => {
+                core::attributes::sig_valtype_::decode(&mut db, line_trimmed);
+            }
             _ => {}
         }
     }

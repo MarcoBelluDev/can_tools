@@ -97,16 +97,29 @@ pub struct DatabaseDBC {
 
 impl DatabaseDBC {
     // --------- Nodes --------
-    /// Adds a node to the database and returns the corresponding `NodeKey`.
+    /// Adds a node to the database, seeding attributes with spec defaults, and returns the `NodeKey`.
     pub fn add_node(&mut self, name: &str) -> Result<NodeKey, String> {
         // check that the node name is not already present
         if self.get_node_key_by_name(name).is_some() {
             return Err("Node name already present.".to_string());
         }
-        let key: NodeKey = self.nodes.insert(NodeDBC {
+
+        let mut node: NodeDBC = NodeDBC {
             name: name.to_string(),
             ..Default::default()
-        });
+        };
+
+        for (attr_name, spec) in &self.node_attr_spec {
+            if let Some(default_value) = spec.default.as_ref() {
+                node.attributes
+                    .insert(attr_name.clone(), default_value.clone());
+            }
+        }
+
+        // create NodeKey and NodeDBC
+        let key: NodeKey = self.nodes.insert(node);
+
+        // push NodeKey in relevant variables
         self.nodes_order.push(key);
         self.node_key_by_name.insert(name.to_lowercase(), key);
         Ok(key)
@@ -619,7 +632,8 @@ impl DatabaseDBC {
         self.get_sig_by_key_mut(key)
     }
 
-    /// Iterators according to the orders (defualt order is name based)
+    // -------------- Immutable Iterators ---------------
+    /// Iterator according to the orders (defualt order is name based)
     pub fn iter_nodes(&self) -> impl Iterator<Item = &NodeDBC> + '_ {
         self.nodes_order.iter().filter_map(|&k| self.nodes.get(k))
     }
@@ -634,6 +648,37 @@ impl DatabaseDBC {
         self.signals_order
             .iter()
             .filter_map(|&k| self.signals.get(k))
+    }
+
+    // -------------- Mutable Closures ---------------
+    /// Closure to edit all NodeDBC
+    pub fn for_each_node_mut(&mut self, mut f: impl FnMut(&mut NodeDBC)) {
+        let keys = self.nodes_order.clone(); // evitiamo borrow lungo su nodes_order
+        for k in keys {
+            if let Some(node) = self.nodes.get_mut(k) {
+                f(node);
+            }
+        }
+    }
+
+    /// Closure to edit all MessageDBC
+    pub fn for_each_message_mut(&mut self, mut f: impl FnMut(&mut MessageDBC)) {
+        let keys = self.messages_order.clone();
+        for k in keys {
+            if let Some(msg) = self.messages.get_mut(k) {
+                f(msg);
+            }
+        }
+    }
+
+    /// Closure to edit all SignalDBC
+    pub fn for_each_signal_mut(&mut self, mut f: impl FnMut(&mut SignalDBC)) {
+        let keys = self.signals_order.clone();
+        for k in keys {
+            if let Some(sig) = self.signals.get_mut(k) {
+                f(sig);
+            }
+        }
     }
 
     // -------------- Sorting ---------------

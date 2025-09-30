@@ -55,21 +55,16 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     let bit_start: u16 = pos_len.next().unwrap_or("0").parse().unwrap_or(0);
     let bit_length: u16 = pos_len.next().unwrap_or("0").parse().unwrap_or(0);
     let endian_value: u8 = es.chars().next().unwrap_or('1').to_digit(10).unwrap_or(1) as u8;
-    let sign_value: u8 = if es.chars().nth(1).unwrap_or('+') == '-' {
-        1
+    let sign: Signess = if es.chars().nth(1).unwrap_or('+') == '-' {
+        Signess::Signed
     } else {
-        0
+        Signess::Unsigned
     };
 
     let endian: Endianness = if endian_value == 1 {
         Endianness::Intel
     } else {
         Endianness::Motorola
-    };
-    let sign: Signess = if sign_value == 1 {
-        Signess::Signed
-    } else {
-        Signess::Unsigned
     };
 
     // 2) "(factor,offset)"

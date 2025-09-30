@@ -10,3 +10,4 @@ pub(crate) mod ba_def_rel_;
 pub(crate) mod ba_def_sg_;
 pub(crate) mod ba_rel_;
 pub(crate) mod ba_sg_;
+pub(crate) mod sig_valtype_;

@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeValue},
+    attributes::{AttrType, AttributeDef, AttributeSpec, AttributeValue},
     database::DatabaseDBC,
 };
 
@@ -26,7 +26,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         _ => return,
     }
 
-    // 4) Retrieve node mname
+    // 4) Retrieve node name
     let Some(node_name) = parts.next() else {
         return;
     };
@@ -47,16 +47,20 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         rest
     };
 
-    // immutable borrow to read the attribute definition
-    let attr_def = match db
-        .node_attr_spec
-        .get(attr_name)
-        .and_then(|spec| spec.def.as_ref())
-    {
+    // immutable borrow to Attribute Specification
+    let attr_spec: &AttributeSpec = match db.node_attr_spec.get(attr_name) {
+        Some(spec) => spec,
+        None => return, // exit immediately
+    };
+
+    // immutable borrow to Attribute Definition
+    let attr_def: &AttributeDef = match attr_spec.def.as_ref() {
         Some(d) => d,
         None => return,
     };
 
+    // check the type from the Attribute Definition
+    // if value is not found, use default value from Attribute Specification
     let attr_value: AttributeValue = match attr_def.kind {
         AttrType::String => AttributeValue::Str(value.to_string()),
         AttrType::Int => {
@@ -89,7 +93,9 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         }
     };
 
-    if let Some(node) = db.get_node_by_name_mut(node_name) {
-        node.attributes.insert(attr_name.to_string(), attr_value);
+    if let Some(node) = db.get_node_by_name_mut(node_name)
+        && let Some(slot) = node.attributes.get_mut(attr_name)
+    {
+        *slot = attr_value;
     }
 }
