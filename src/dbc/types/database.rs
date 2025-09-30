@@ -153,14 +153,116 @@ impl DatabaseDBC {
         Ok(())
     }
 
+    /// Create a new Node from an existing one adding "_copy" to the name
+    /// Messages and Signals are modified to include new node relations
+    pub fn copy_node(&mut self, source_node_key: NodeKey) -> Result<NodeKey, String> {
+        let new_node: NodeDBC = {
+            // check that the source node key correspond to a Node
+            let Some(node) = self.get_node_by_key(source_node_key) else {
+                return Err("Selected NodeKey does not exist".to_string());
+            };
+            let mut cloned = node.clone();
+            cloned.name.push_str("_copy");
+            cloned
+        };
+
+        // Collect current relations to refresh after the insertion
+        let messages_sent: Vec<MessageKey> = new_node.messages_sent.clone();
+        let signals_read: Vec<SignalKey> = new_node.signals_read.clone();
+
+        // Validate that related messages still exist
+        for &msg_key in &messages_sent {
+            if self.get_message_by_key(msg_key).is_none() {
+                return Err("Message not found for the provided MessageKey.".to_string());
+            }
+        }
+
+        // Gather signal/message pairs; ensure the message is still present
+        let mut signal_message_pairs: Vec<(SignalKey, MessageKey)> =
+            Vec::with_capacity(signals_read.len());
+        for &sig_key in &signals_read {
+            let Some(signal) = self.get_sig_by_key(sig_key) else {
+                return Err("Signal not found for given SignalKey".to_string());
+            };
+            if self.get_message_by_key(signal.message).is_none() {
+                return Err("Message not found for the provided MessageKey.".to_string());
+            }
+            signal_message_pairs.push((sig_key, signal.message));
+        }
+
+        let new_name_lower = new_node.name.to_lowercase();
+        let new_key: NodeKey = self.nodes.insert(new_node);
+        self.nodes_order.push(new_key);
+        self.node_key_by_name.insert(new_name_lower, new_key);
+
+        // re-link messages_sent and signals_sent
+        for msg_key in messages_sent {
+            self.add_sender_relation(msg_key, new_key)?;
+        }
+
+        // re-link receivers for each signal (and aggregate at message level)
+        for (sig_key, msg_key) in signal_message_pairs {
+            {
+                let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
+                    return Err("Signal not found for given SignalKey".to_string());
+                };
+                if !signal.receiver_nodes.contains(&new_key) {
+                    signal.receiver_nodes.push(new_key);
+                }
+            }
+
+            if let Some(message) = self.get_message_by_key_mut(msg_key) {
+                if !message.receiver_nodes.contains(&new_key) {
+                    message.receiver_nodes.push(new_key);
+                }
+            } else {
+                return Err("Message not found for the provided MessageKey.".to_string());
+            }
+        }
+
+        Ok(new_key)
+    }
+
+    /// Deletes the node identified by `node_key`, removing every reference across the database.
+    pub fn delete_node(&mut self, node_key: NodeKey) -> Result<(), String> {
+        let removed_node: NodeDBC = self
+            .nodes
+            .remove(node_key)
+            .ok_or_else(|| "Node not found for the provided NodeKey.".to_string())?;
+
+        let node_name_lower: String = removed_node.name.to_lowercase();
+
+        self.nodes_order.retain(|&k| k != node_key);
+        self.node_key_by_name.remove(&node_name_lower);
+
+        self.bu_sg_rel_attributes
+            .retain(|(nk, _), _| *nk != node_key);
+        self.bu_bo_rel_attributes
+            .retain(|(nk, _), _| *nk != node_key);
+
+        for (_msg_key, message) in self.messages.iter_mut() {
+            message.sender_nodes.retain(|&nk| nk != node_key);
+            message.receiver_nodes.retain(|&nk| nk != node_key);
+        }
+
+        for (_sig_key, signal) in self.signals.iter_mut() {
+            signal.receiver_nodes.retain(|&nk| nk != node_key);
+        }
+
+        Ok(())
+    }
+
+    /// Looks up the `NodeKey` for a given node name (case-insensitive).
     pub fn get_node_key_by_name(&self, name: &str) -> Option<NodeKey> {
         self.node_key_by_name.get(&name.to_lowercase()).copied()
     }
 
+    /// Returns an immutable reference to the node addressed by the supplied key.
     pub fn get_node_by_key(&self, key: NodeKey) -> Option<&NodeDBC> {
         self.nodes.get(key)
     }
 
+    /// Returns a mutable reference to the node addressed by the supplied key.
     pub fn get_node_by_key_mut(&mut self, key: NodeKey) -> Option<&mut NodeDBC> {
         self.nodes.get_mut(key)
     }
@@ -178,7 +280,7 @@ impl DatabaseDBC {
     }
 
     // ------------- Messages ------------
-    // Adds a message and indexes its id/name. Also sets `current_msg` for subsequent SG_ lines.
+    /// Adds a message, indexes its id/name and updates `current_msg` for upcoming SG_ rows.
     pub fn add_message(
         &mut self,
         name: &str,
@@ -223,23 +325,28 @@ impl DatabaseDBC {
         Ok(msg_key)
     }
 
+    /// Looks up the `MessageKey` from a case-insensitive message name.
     pub fn get_msg_key_by_name(&self, name: &str) -> Option<MessageKey> {
         self.msg_key_by_name.get(&name.to_lowercase()).copied()
     }
 
+    /// Looks up the `MessageKey` by numeric CAN identifier.
     pub fn get_msg_key_by_id(&self, id: &u32) -> Option<MessageKey> {
         self.msg_key_by_id.get(id).copied()
     }
 
+    /// Looks up the `MessageKey` by hexadecimal CAN identifier.
     pub fn get_msg_key_by_id_hex(&self, id_hex: &str) -> Option<MessageKey> {
         // let key: String = normalize_id_hex(id_hex); // "0x...UPPERCASE"
         self.msg_key_by_hex.get(id_hex).copied()
     }
 
+    /// Returns an immutable reference to a message given its key.
     pub fn get_message_by_key(&self, key: MessageKey) -> Option<&MessageDBC> {
         self.messages.get(key)
     }
 
+    /// Returns a mutable reference to a message given its key.
     pub fn get_message_by_key_mut(&mut self, key: MessageKey) -> Option<&mut MessageDBC> {
         self.messages.get_mut(key)
     }
@@ -317,13 +424,14 @@ impl DatabaseDBC {
         sig_key
     }
 
+    /// Associates an additional receiver node with an existing signal.
     pub fn add_sig_receiver_node(
         &mut self,
         sig_key: SignalKey,
         node_key: NodeKey,
     ) -> Result<(), String> {
         let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
-            return Err("Signal not found for given SignalKey".to_string())
+            return Err("Signal not found for given SignalKey".to_string());
         };
 
         // add the NodeKey to SignalDBC if not already present
@@ -334,6 +442,7 @@ impl DatabaseDBC {
         Ok(())
     }
 
+    /// Binds a signal to a message, configuring its layout and multiplexing metadata.
     pub fn add_msg_sig_relation(
         &mut self,
         sig_key: SignalKey,
@@ -431,7 +540,9 @@ impl DatabaseDBC {
                 // Usually, this should never happen because Multiplexor must always be first line in a message
                 let dep_to_attach: Vec<(SignalKey, MuxSelector)> = {
                     let Some(msg) = self.get_message_by_key(msg_key) else {
-                        return Err("Message missing while updating multiplexor relation.".to_string());
+                        return Err(
+                            "Message missing while updating multiplexor relation.".to_string()
+                        );
                     };
                     msg.signals
                         .iter()
@@ -467,12 +578,12 @@ impl DatabaseDBC {
                 }
             }
             MuxRole::Multiplexed => {
-                if let Some(sw) = inferred_switch {
-                    if let Some(m) = self.get_message_by_key_mut(msg_key) {
-                        let by_sel = m.mux_cases.entry(sw).or_default();
-                        if let Some(sel) = mux_selector.clone() {
-                            by_sel.entry(sel).or_default().push(sig_key);
-                        }
+                if let Some(sw) = inferred_switch
+                    && let Some(m) = self.get_message_by_key_mut(msg_key)
+                {
+                    let by_sel = m.mux_cases.entry(sw).or_default();
+                    if let Some(sel) = mux_selector.clone() {
+                        by_sel.entry(sel).or_default().push(sig_key);
                     }
                 }
             }
@@ -481,14 +592,17 @@ impl DatabaseDBC {
         Ok(sig_key)
     }
 
+    /// Looks up the `SignalKey` for a case-insensitive signal name.
     pub fn get_sig_key_by_name(&self, name: &str) -> Option<SignalKey> {
         self.sig_key_by_name.get(&name.to_lowercase()).copied()
     }
 
+    /// Returns an immutable reference to a signal given its key.
     pub fn get_sig_by_key(&self, key: SignalKey) -> Option<&SignalDBC> {
         self.signals.get(key)
     }
 
+    /// Returns a mutable reference to a signal given its key.
     pub fn get_sig_by_key_mut(&mut self, key: SignalKey) -> Option<&mut SignalDBC> {
         self.signals.get_mut(key)
     }

@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    database::{DatabaseDBC, NodeKey, SignalKey, MessageKey},
+    database::{DatabaseDBC, MessageKey, NodeKey, SignalKey},
     message::{MuxRole, MuxSelector},
     signal::{Endianness, Signess},
 };
@@ -61,12 +61,12 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         0
     };
 
-    let endian= if endian_value == 1 {
+    let endian: Endianness = if endian_value == 1 {
         Endianness::Intel
     } else {
         Endianness::Motorola
     };
-    let sign= if sign_value == 1 {
+    let sign: Signess = if sign_value == 1 {
         Signess::Signed
     } else {
         Signess::Unsigned
@@ -159,16 +159,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     }
 
     // create the signal
-    let sig_key: SignalKey = db.add_signal(
-        &name,
-        endian,
-        sign,
-        factor,
-        offset,
-        min,
-        max,
-        &unit,
-    );
+    let sig_key: SignalKey = db.add_signal(&name, endian, sign, factor, offset, min, max, &unit);
 
     // add receiver nodes
     for node_key in receiver_nodes.iter().copied() {
@@ -189,7 +180,14 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
     db.current_msg = Some(msg_key);
 
-    let _ = db.add_msg_sig_relation(sig_key, msg_key, bit_start, bit_length, mux_role, mux_selector);
+    let _ = db.add_msg_sig_relation(
+        sig_key,
+        msg_key,
+        bit_start,
+        bit_length,
+        mux_role,
+        mux_selector,
+    );
 
     // Back-link: for each receiver node, add this SignalKey in the signals_read vector
     for nk in receiver_nodes.iter().copied() {

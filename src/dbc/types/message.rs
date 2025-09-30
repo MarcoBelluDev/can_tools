@@ -66,6 +66,7 @@ pub enum IdFormat {
 }
 
 impl IdFormat {
+    /// Returns a human-readable name for this CAN ID format.
     pub fn to_str(&self) -> String {
         match self {
             IdFormat::Standard => "Standard".to_string(),
@@ -116,6 +117,7 @@ pub struct MuxInfo {
 }
 
 impl MuxInfo {
+    /// Describes the current multiplexing role as a display-friendly string.
     pub fn role_to_string(&self) -> String {
         match self.role {
             MuxRole::None => "None".to_string(),
