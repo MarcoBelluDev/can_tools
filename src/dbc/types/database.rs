@@ -158,9 +158,44 @@ impl DatabaseDBC {
 
         // add the SignalKeys to NodeDBC if not already present
         for signal_key in msg_signals {
-            if !node.signals_sent.contains(&signal_key) {
-                node.signals_sent.push(signal_key);
+            if !node.tx_signals.contains(&signal_key) {
+                node.tx_signals.push(signal_key);
             }
+        }
+
+        Ok(())
+    }
+
+    /// Remove a message from a Sender Node, keeping both sides in sync.
+    pub fn remove_sender_relation(
+        &mut self,
+        msg_key: MessageKey,
+        node_key: NodeKey,
+    ) -> Result<(), String> {
+        let msg_signals: Vec<SignalKey> = {
+            // check that a MessageDBC exist for given MessageKey
+            let Some(message) = self.get_message_by_key_mut(msg_key) else {
+                return Err("Message not found for the provided MessageKey.".into());
+            };
+
+            // remove the NodeKey from MessageDBC.sender_nodes
+            message.sender_nodes.retain(|x| x != &node_key);
+
+            // clone the signals inside the message to avoid borrow issues
+            message.signals.clone()
+        };
+
+        // check that a NodeDBC exist for given NodeKey
+        let Some(node) = self.get_node_by_key_mut(node_key) else {
+            return Err("Node not found for the provided NodeKey.".into());
+        };
+
+        // remove the MessageKey from NodeDBC.messages_sent
+        node.messages_sent.retain(|x| x != &msg_key);
+
+        // remove the SignalKeys from NodeDBC.signal_sent
+        for signal_key in msg_signals {
+            node.tx_signals.retain(|x| x != &signal_key);
         }
 
         Ok(())
@@ -181,7 +216,7 @@ impl DatabaseDBC {
 
         // Collect current relations to refresh after the insertion
         let messages_sent: Vec<MessageKey> = new_node.messages_sent.clone();
-        let signals_read: Vec<SignalKey> = new_node.signals_read.clone();
+        let rx_signals: Vec<SignalKey> = new_node.rx_signals.clone();
 
         // Validate that related messages still exist
         for &msg_key in &messages_sent {
@@ -192,8 +227,8 @@ impl DatabaseDBC {
 
         // Gather signal/message pairs; ensure the message is still present
         let mut signal_message_pairs: Vec<(SignalKey, MessageKey)> =
-            Vec::with_capacity(signals_read.len());
-        for &sig_key in &signals_read {
+            Vec::with_capacity(rx_signals.len());
+        for &sig_key in &rx_signals {
             let Some(signal) = self.get_sig_by_key(sig_key) else {
                 return Err("Signal not found for given SignalKey".to_string());
             };
@@ -208,7 +243,7 @@ impl DatabaseDBC {
         self.nodes_order.push(new_key);
         self.node_key_by_name.insert(new_name_lower, new_key);
 
-        // re-link messages_sent and signals_sent
+        // re-link messages_sent and tx_signals
         for msg_key in messages_sent {
             self.add_sender_relation(msg_key, new_key)?;
         }
@@ -437,7 +472,7 @@ impl DatabaseDBC {
         sig_key
     }
 
-    /// Associates an additional receiver node with an existing signal.
+    /// Associates an additional receiver node with an existing signal, keeping both sides in sync.
     pub fn add_sig_receiver_node(
         &mut self,
         sig_key: SignalKey,
@@ -451,6 +486,38 @@ impl DatabaseDBC {
         if !signal.receiver_nodes.contains(&node_key) {
             signal.receiver_nodes.push(node_key);
         }
+
+        let Some(node) = self.get_node_by_key_mut(node_key) else {
+            return Err("Node not found for given NodeKey".to_string());
+        };
+
+        // add the SignalKey to NodeDBC if not already present
+        if !node.rx_signals.contains(&sig_key) {
+            node.rx_signals.push(sig_key);
+        }
+
+        Ok(())
+    }
+
+    /// Remove a receiver node from an existing signal, keeping both sides in sync.
+    pub fn remove_sig_receiver_node(
+        &mut self,
+        sig_key: SignalKey,
+        node_key: NodeKey,
+    ) -> Result<(), String> {
+        let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
+            return Err("Signal not found for given SignalKey".to_string());
+        };
+
+        // remove the NodeKey from SignalDBC.receiver_nodes
+        signal.receiver_nodes.retain(|x| x != &node_key);
+
+        let Some(node) = self.get_node_by_key_mut(node_key) else {
+            return Err("Node not found for given NodeKey".to_string());
+        };
+
+        // remove the SignalKey from NodeDBC.rx_signals
+        node.rx_signals.retain(|x| x != &sig_key);
 
         Ok(())
     }
@@ -524,7 +591,7 @@ impl DatabaseDBC {
         }
 
         // Also back-link: for each sender node of this message, mark this signal as sent
-        // This keeps NodeDBC.signals_sent consistent when the transmitter is specified on BO_
+        // This keeps NodeDBC.tx_signals consistent when the transmitter is specified on BO_
         // and SG_ lines are parsed afterwards (common case without BO_TX_BU_ lines).
         let sender_nodes: Vec<NodeKey> = self
             .get_message_by_key(msg_key)
@@ -532,9 +599,9 @@ impl DatabaseDBC {
             .unwrap_or_default();
         for nk in sender_nodes {
             if let Some(node) = self.get_node_by_key_mut(nk)
-                && !node.signals_sent.contains(&sig_key)
+                && !node.tx_signals.contains(&sig_key)
             {
-                node.signals_sent.push(sig_key);
+                node.tx_signals.push(sig_key);
             }
         }
 
@@ -700,7 +767,7 @@ impl DatabaseDBC {
             .sort_by_cached_key(|&k| self.signals.get(k).map(|s| s.name.to_ascii_lowercase()));
     }
 
-    /// Sort `messages_sent`, `signals_sent` and `signals_read` inside the specific given NodeDBC
+    /// Sort `messages_sent`, `tx_signals` and `rx_signals` inside the specific given NodeDBC
     /// by the target names (ASCII case-insensitive).
     pub fn sort_node_fields(&mut self, node_key: NodeKey) {
         // Compute the new order on immutable borrows
@@ -717,16 +784,16 @@ impl DatabaseDBC {
                     .unwrap_or_default()
             });
 
-            // signals_sent -> by SignalDBC.name
-            let mut sr1: Vec<SignalKey> = node.signals_sent.clone();
+            // tx_signals -> by SignalDBC.name
+            let mut sr1: Vec<SignalKey> = node.tx_signals.clone();
             sr1.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
                     .unwrap_or_default()
             });
 
-            // signals_read -> by SignalDBC.name
-            let mut sr2: Vec<SignalKey> = node.signals_read.clone();
+            // rx_signals -> by SignalDBC.name
+            let mut sr2: Vec<SignalKey> = node.rx_signals.clone();
             sr2.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
@@ -739,8 +806,8 @@ impl DatabaseDBC {
         // Write back with a mutable borrow
         if let Some(node) = self.get_node_by_key_mut(node_key) {
             node.messages_sent = sorted_msgs;
-            node.signals_sent = sorted_sigs_sent;
-            node.signals_read = sorted_sigs_received;
+            node.tx_signals = sorted_sigs_sent;
+            node.rx_signals = sorted_sigs_received;
         }
     }
 
@@ -812,8 +879,8 @@ impl DatabaseDBC {
 
     /// For ALL NodeDBC entries, sort:
     /// - `messages_sent`  by the target MessageDBC.name (ASCII case-insensitive)
-    /// - `signals_sent`  by the target MessageDBC.name (ASCII case-insensitive)
-    /// - `signals_read`   by the target SignalDBC.name  (ASCII case-insensitive)
+    /// - `tx_signals`  by the target MessageDBC.name (ASCII case-insensitive)
+    /// - `rx_signals`   by the target SignalDBC.name  (ASCII case-insensitive)
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key for determinism.
     pub fn sort_all_node_fields(&mut self) {
@@ -832,8 +899,8 @@ impl DatabaseDBC {
                     (missing, name, mk) // missing last, then by lowercase name, then key as tie-breaker
                 });
 
-                // signals_sent -> sort by signal name (case-insensitive)
-                let mut sr1: Vec<SignalKey> = node.signals_sent.clone();
+                // tx_signals -> sort by signal name (case-insensitive)
+                let mut sr1: Vec<SignalKey> = node.tx_signals.clone();
                 sr1.sort_by_cached_key(|&sk| {
                     let (missing, name) = match self.get_sig_by_key(sk) {
                         Some(s) => (false, s.name.to_ascii_lowercase()),
@@ -842,8 +909,8 @@ impl DatabaseDBC {
                     (missing, name, sk)
                 });
 
-                // signals_read -> sort by signal name (case-insensitive)
-                let mut sr2: Vec<SignalKey> = node.signals_read.clone();
+                // rx_signals -> sort by signal name (case-insensitive)
+                let mut sr2: Vec<SignalKey> = node.rx_signals.clone();
                 sr2.sort_by_cached_key(|&sk| {
                     let (missing, name) = match self.get_sig_by_key(sk) {
                         Some(s) => (false, s.name.to_ascii_lowercase()),
@@ -854,8 +921,8 @@ impl DatabaseDBC {
                 NodePlan {
                     nk,
                     messages_sent: ms,
-                    signals_sent: sr1,
-                    signals_read: sr2,
+                    tx_signals: sr1,
+                    rx_signals: sr2,
                 }
             })
             .collect();
@@ -864,8 +931,8 @@ impl DatabaseDBC {
         for p in plans {
             if let Some(node) = self.get_node_by_key_mut(p.nk) {
                 node.messages_sent = p.messages_sent;
-                node.signals_sent = p.signals_sent;
-                node.signals_read = p.signals_read;
+                node.tx_signals = p.tx_signals;
+                node.rx_signals = p.rx_signals;
             }
         }
     }
@@ -980,8 +1047,8 @@ impl BusType {
 struct NodePlan {
     nk: NodeKey,
     messages_sent: Vec<MessageKey>,
-    signals_sent: Vec<SignalKey>,
-    signals_read: Vec<SignalKey>,
+    tx_signals: Vec<SignalKey>,
+    rx_signals: Vec<SignalKey>,
 }
 
 /// Type alias to simplify clippy::type_complexity for message sorting plans.

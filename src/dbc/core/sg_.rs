@@ -156,7 +156,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     // create the signal
     let sig_key: SignalKey = db.add_signal(&name, endian, sign, factor, offset, min, max, &unit);
 
-    // add receiver nodes
+    // add NodeKeys to SignalDBC.receiver_nodes
+    // add SignalKeys to NodeDBC.signals_read
     for node_key in receiver_nodes.iter().copied() {
         let _ = db.add_sig_receiver_node(sig_key, node_key);
     }
@@ -183,13 +184,4 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         mux_role,
         mux_selector,
     );
-
-    // Back-link: for each receiver node, add this SignalKey in the signals_read vector
-    for nk in receiver_nodes.iter().copied() {
-        if let Some(node) = db.get_node_by_key_mut(nk)
-            && !node.signals_read.contains(&sig_key)
-        {
-            node.signals_read.push(sig_key);
-        }
-    }
 }

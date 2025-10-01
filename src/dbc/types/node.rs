@@ -14,9 +14,9 @@ pub struct NodeDBC {
     /// Messages transmitted by this node.
     pub messages_sent: Vec<MessageKey>,
     /// Signals read by this node
-    pub signals_sent: Vec<SignalKey>,
+    pub tx_signals: Vec<SignalKey>,
     /// Signals read by this node
-    pub signals_read: Vec<SignalKey>,
+    pub rx_signals: Vec<SignalKey>,
 
     // --- Attributes ---
     pub attributes: BTreeMap<String, AttributeValue>,
