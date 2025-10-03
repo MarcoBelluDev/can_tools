@@ -482,6 +482,8 @@ impl DatabaseDBC {
             return Err("Signal not found for given SignalKey".to_string());
         };
 
+        let msg_key: MessageKey = signal.message.clone();
+
         // add the NodeKey to SignalDBC if not already present
         if !signal.receiver_nodes.contains(&node_key) {
             signal.receiver_nodes.push(node_key);
@@ -494,6 +496,16 @@ impl DatabaseDBC {
         // add the SignalKey to NodeDBC if not already present
         if !node.rx_signals.contains(&sig_key) {
             node.rx_signals.push(sig_key);
+        }
+
+        // check that the MessageDBC containing SignalKey contains NodeKey as receiver
+        let Some(message) = self.get_message_by_key_mut(msg_key) else {
+            return Err("Message not found for given MessageKey".to_string());
+        };
+
+        // add the NodeKey to MessageDBC if not already present
+        if !message.receiver_nodes.contains(&node_key) {
+            message.receiver_nodes.push(node_key);
         }
 
         Ok(())
@@ -509,6 +521,8 @@ impl DatabaseDBC {
             return Err("Signal not found for given SignalKey".to_string());
         };
 
+        let msg_key: MessageKey = signal.message.clone();
+
         // remove the NodeKey from SignalDBC.receiver_nodes
         signal.receiver_nodes.retain(|x| x != &node_key);
 
@@ -518,6 +532,27 @@ impl DatabaseDBC {
 
         // remove the SignalKey from NodeDBC.rx_signals
         node.rx_signals.retain(|x| x != &sig_key);
+
+        // check if the NodeKey still has some signal from the MessageDBC
+        let still_receives_any_from_msg: bool = {
+            let Some(node) = self.get_node_by_key(node_key) else {
+                return Err("Node not found for given NodeKey".to_string());
+            };
+    
+            node.rx_signals.iter().copied().any(|sk| {
+                self.get_sig_by_key(sk)
+                    .map(|s| s.message == msg_key)
+                    .unwrap_or(false)
+            })
+        };
+
+        // if there are no more signals from that MessageDBC, remove the Nodekey as receiver of it
+        if !still_receives_any_from_msg {
+            let Some(message) = self.get_message_by_key_mut(msg_key) else {
+                return Err("Message not found for given MessageKey".to_string());
+            };
+            message.receiver_nodes.retain(|x| x != &node_key);
+        }
 
         Ok(())
     }
