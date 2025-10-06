@@ -39,6 +39,8 @@ pub struct DatabaseDBC {
     // --- General information ---
     /// DatabaseDBC version string.
     pub name: String,
+    /// DatabaseDBC BusType
+    pub bustype: BusType,
     /// DatabaseDBC version string.
     pub version: String,
     /// DatabaseDBC comment.
@@ -74,13 +76,16 @@ pub struct DatabaseDBC {
     pub rel_attr_spec_bu_bo: BTreeMap<String, AttributeSpec>,
 
     // --- Lookups (case-normalized) ---
-    pub(crate) node_key_by_name: HashMap<String, NodeKey>, // lower(name) → NodeKey
-    pub(crate) msg_key_by_id: HashMap<u32, MessageKey>,    // id10 → MessageKey
-    pub(crate) msg_key_by_hex: HashMap<String, MessageKey>, // "0x...." uppercase → MessageKey
-    pub(crate) msg_key_by_name: HashMap<String, MessageKey>, // lower(name) → MessageKey
-
-    // Global map for signals by (lower) name. Beware of collisions if two BO_ have same SG_ name.
-    pub(crate) sig_key_by_name: HashMap<String, SignalKey>,
+    /// Global map for nodes by (lower) name.
+    pub node_key_by_name: HashMap<String, NodeKey>, // lower(name) → NodeKey
+    /// Global map for messages by id.
+    pub msg_key_by_id: HashMap<u32, MessageKey>, // id10 → MessageKey
+    /// Global map for messages by id_hex.
+    pub msg_key_by_hex: HashMap<String, MessageKey>, // "0x...." uppercase → MessageKey
+    /// Global map for messages by (lower) name.
+    pub msg_key_by_name: HashMap<String, MessageKey>, // lower(name) → MessageKey
+    /// Global map for signals by (lower) name. Beware of collisions if two BO_ have same SG_ name.
+    pub sig_key_by_name: HashMap<String, SignalKey>, // lower(name) → SignalKey
 
     // Parsing state: last message seen (used by SG_ decoder)
     pub(crate) current_msg: Option<MessageKey>,
@@ -209,8 +214,16 @@ impl DatabaseDBC {
             let Some(node) = self.get_node_by_key(source_node_key) else {
                 return Err("Selected NodeKey does not exist".to_string());
             };
-            let mut cloned = node.clone();
-            cloned.name.push_str("_copy");
+
+            // check that new copy name does not already exist
+            let mut copy_counter: u32 = 0;
+            let mut new_name: String = format!("{}_copy", &node.name);
+            while self.get_node_by_name(&new_name).is_some() {
+                new_name = format!("{}_copy{}", &node.name, copy_counter);
+                copy_counter += 1;
+            }
+            let mut cloned: NodeDBC = node.clone();
+            cloned.name = new_name;
             cloned
         };
 
@@ -341,6 +354,12 @@ impl DatabaseDBC {
             return Err("Message name already present.".to_string());
         }
 
+        // check if message with provided ID already exist
+        if let Some(r) = self.get_msg_key_by_id(&id) {
+            self.current_msg = Some(r); // set found message as current_msg
+            return Err("Message ID already assigned to an existing Message.".to_string());
+        }
+
         let id_hex: String = id_to_hex(id).to_string();
 
         let id_format: IdFormat = if id > 2048 {
@@ -371,6 +390,118 @@ impl DatabaseDBC {
 
         self.current_msg = Some(msg_key); // set created message as current_msg
         Ok(msg_key)
+    }
+
+    /// Deletes the Message identified by `msg_key`, removing every reference across the database.
+    pub fn delete_message(&mut self, msg_key: MessageKey) -> Result<(), String> {
+        let removed_msg: MessageDBC = self
+            .messages
+            .remove(msg_key)
+            .ok_or_else(|| "Message not found for the provided MessageKey.".to_string())?;
+
+        let msg_name_lower: String = removed_msg.name.to_lowercase();
+
+        self.messages_order.retain(|&k| k != msg_key);
+        self.msg_key_by_name.remove(&msg_name_lower);
+
+        self.bu_bo_rel_attributes
+            .retain(|(_, mk), _| *mk != msg_key);
+
+        // remove the Message from the Nodes.messages_sent
+        // remove associate Signals from Node.tx_signals
+        for (_node_key, node) in self.nodes.iter_mut() {
+            node.messages_sent.retain(|&mk| mk != msg_key);
+            for sig_key in &removed_msg.signals {
+                node.tx_signals.retain(|&sk| sk != *sig_key);
+            }
+        }
+
+        // remove the Message from the signal.message
+        for (_sig_key, signal) in self.signals.iter_mut() {
+            if signal.message == msg_key {
+                signal.message = MessageKey::default();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create a new Message from an existing one adding "_copy" to the name and +1 to ID.
+    /// Inside Signals will be copied too.
+    pub fn copy_message(&mut self, source_msg_key: MessageKey) -> Result<MessageKey, String> {
+        // check that the source message key correspond to a Message
+        let (src_name, src_id, src_byte_len, src_comment, src_attrs, src_sender_nodes, src_signals) = {
+            let source_msg = self
+                .get_message_by_key(source_msg_key)
+                .ok_or_else(|| "Selected MessageKey does not exist".to_string())?;
+            (
+                source_msg.name.clone(),
+                source_msg.id,
+                source_msg.byte_length,
+                source_msg.comment.clone(),
+                source_msg.attributes.clone(),
+                source_msg.sender_nodes.clone(),
+                source_msg.signals.clone(),
+            )
+        };
+
+        // check that new copy name does not already exist
+        let mut copy_counter: u32 = 0;
+        let mut new_name: String = format!("{}_copy", &src_name);
+        while self.get_message_by_name(&new_name).is_some() {
+            new_name = format!("{}_copy{}", &src_name, copy_counter);
+            copy_counter += 1;
+        }
+
+        // increment the id by 1 until it is not already existing
+        let mut new_id: u32 = src_id + 1;
+        while self.get_message_by_id(new_id).is_some() {
+            new_id += 1;
+        }
+
+        let new_msg_key: MessageKey = self.add_message(&new_name, new_id, src_byte_len)?;
+        let Some(new_msg) = self.get_message_by_key_mut(new_msg_key) else {
+            return Err("It was not possible to find new created Message".to_string());
+        };
+
+        // update comments and attributes
+        new_msg.comment = src_comment;
+        new_msg.attributes = src_attrs;
+
+        // useful info from old_signals
+        let useful_sig_info: Vec<(SignalKey, u16, u16, MuxRole, Option<MuxSelector>)> = src_signals
+            .iter()
+            .filter_map(|&old_sk| {
+                let s = self.get_sig_by_key(old_sk)?;
+                let (role, sel) = if let Some(mi) = &s.mux {
+                    (mi.role, Some(mi.selector.clone()))
+                } else {
+                    (MuxRole::None, None)
+                };
+                Some((old_sk, s.bit_start, s.bit_length, role, sel))
+            })
+            .collect();
+
+        // copy internal signals and attach them to new message
+        for (old_sk, bit_start, bit_len, role, sel) in useful_sig_info {
+            if let Ok(new_sk) = self.copy_signal(old_sk) {
+                let _ = self.add_msg_sig_relation(
+                    new_sk,
+                    new_msg_key,
+                    bit_start,
+                    bit_len,
+                    role,
+                    sel.clone(),
+                );
+            }
+        }
+
+        // update Nodes.message_sent
+        for node_key in src_sender_nodes {
+            let _ = self.add_sender_relation(new_msg_key, node_key);
+        }
+
+        Ok(new_msg_key)
     }
 
     /// Looks up the `MessageKey` from a case-insensitive message name.
@@ -472,6 +603,35 @@ impl DatabaseDBC {
         sig_key
     }
 
+    /// Deletes the Signal identified by `sig_key`, removing every reference across the database.
+    pub fn delete_signal(&mut self, sig_key: SignalKey) -> Result<(), String> {
+        let removed_sig: SignalDBC = self
+            .signals
+            .remove(sig_key)
+            .ok_or_else(|| "Signal not found for the provided SignalKey.".to_string())?;
+
+        let sig_name_lower: String = removed_sig.name.to_lowercase();
+
+        self.signals_order.retain(|&k| k != sig_key);
+        self.sig_key_by_name.remove(&sig_name_lower);
+
+        self.bu_sg_rel_attributes
+            .retain(|(_, sk), _| *sk != sig_key);
+
+        // remove the Signal from the Node rx_signal and tx_signal
+        for (_node_key, node) in self.nodes.iter_mut() {
+            node.tx_signals.retain(|&sk| sk != sig_key);
+            node.rx_signals.retain(|&sk| sk != sig_key);
+        }
+
+        // remove the Signal from the Message.signal
+        for (_msg_key, message) in self.messages.iter_mut() {
+            message.signals.retain(|&sk| sk != sig_key);
+        }
+
+        Ok(())
+    }
+
     /// Associates an additional receiver node with an existing signal, keeping both sides in sync.
     pub fn add_sig_receiver_node(
         &mut self,
@@ -482,7 +642,7 @@ impl DatabaseDBC {
             return Err("Signal not found for given SignalKey".to_string());
         };
 
-        let msg_key: MessageKey = signal.message.clone();
+        let msg_key: MessageKey = signal.message;
 
         // add the NodeKey to SignalDBC if not already present
         if !signal.receiver_nodes.contains(&node_key) {
@@ -521,7 +681,7 @@ impl DatabaseDBC {
             return Err("Signal not found for given SignalKey".to_string());
         };
 
-        let msg_key: MessageKey = signal.message.clone();
+        let msg_key: MessageKey = signal.message;
 
         // remove the NodeKey from SignalDBC.receiver_nodes
         signal.receiver_nodes.retain(|x| x != &node_key);
@@ -538,7 +698,7 @@ impl DatabaseDBC {
             let Some(node) = self.get_node_by_key(node_key) else {
                 return Err("Node not found for given NodeKey".to_string());
             };
-    
+
             node.rx_signals.iter().copied().any(|sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.message == msg_key)
@@ -705,6 +865,71 @@ impl DatabaseDBC {
         }
 
         Ok(sig_key)
+    }
+
+    /// Create a new Signal from an existing one adding "_copy" to the name.
+    pub fn copy_signal(&mut self, source_sig_key: SignalKey) -> Result<SignalKey, String> {
+        // check that the source node key correspond to a Node
+        let (
+            src_name,
+            src_endian,
+            src_sign,
+            src_factor,
+            src_offset,
+            src_min,
+            src_max,
+            src_unit,
+            src_value_table,
+            src_receivers,
+            src_comment,
+            src_attrs,
+        ) = {
+            let s = self
+                .get_sig_by_key(source_sig_key)
+                .ok_or_else(|| "Selected SignalKey does not exist".to_string())?;
+            (
+                s.name.clone(),
+                s.endian.clone(),
+                s.sign.clone(),
+                s.factor,
+                s.offset,
+                s.min,
+                s.max,
+                s.unit_of_measurement.clone(),
+                s.value_table.clone(),
+                s.receiver_nodes.clone(),
+                s.comment.clone(),
+                s.attributes.clone(),
+            )
+        }; // <-- fine borrow immutabile
+
+        // check that new copy name does not already exist
+        let mut copy_counter: u32 = 0;
+        let mut new_name: String = format!("{}_copy", &src_name);
+        while self.get_signal_by_name(&new_name).is_some() {
+            new_name = format!("{}_copy{}", &src_name, copy_counter);
+            copy_counter += 1;
+        }
+
+        let new_sig_key: SignalKey = self.add_signal(
+            &new_name, src_endian, src_sign, src_factor, src_offset, src_min, src_max, &src_unit,
+        );
+        {
+            let Some(new_sig) = self.get_sig_by_key_mut(new_sig_key) else {
+                return Err("It was not possible to find new created Signal".to_string());
+            };
+
+            // update comments and attributes
+            new_sig.comment = src_comment;
+            new_sig.attributes = src_attrs;
+            new_sig.value_table = src_value_table;
+
+            for node_key in src_receivers {
+                let _ = self.add_sig_receiver_node(new_sig_key, node_key);
+            }
+        }
+
+        Ok(new_sig_key)
     }
 
     /// Looks up the `SignalKey` for a case-insensitive signal name.
@@ -1093,7 +1318,7 @@ const CAN_EFF_MASK: u32 = 0x1FFF_FFFF; // 29 bit
 const CAN_SFF_MASK: u32 = 0x0000_07FF; // 11 bit
 
 #[inline]
-fn id_to_hex(id: u32) -> String {
+pub fn id_to_hex(id: u32) -> String {
     if id <= CAN_SFF_MASK {
         format!("0x{:03X}", id)
     } else {

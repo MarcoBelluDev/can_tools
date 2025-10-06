@@ -1,6 +1,6 @@
 use crate::dbc::types::{
     attributes::{AttrType, AttributeValue},
-    database::DatabaseDBC,
+    database::{BusType, DatabaseDBC},
 };
 
 pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
@@ -45,6 +45,14 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     if attr_name == "DBName" {
         db.name = value.to_string();
+        return;
+    }
+
+    if attr_name == "BusType" {
+        db.bustype = match value {
+            "CAN FD" => BusType::CanFd,
+            _ => BusType::Can,
+        };
         return;
     }
 

@@ -13,7 +13,7 @@ pub(crate) fn count_unescaped_quotes(s: &str) -> usize {
             backslashes += 1;
             continue;
         }
-        if ch == '"' && backslashes % 2 == 0 {
+        if ch == '"' && backslashes.is_multiple_of(2) {
             count += 1;
         }
         backslashes = 0;
