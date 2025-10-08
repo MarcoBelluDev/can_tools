@@ -3,6 +3,7 @@ pub(crate) mod bo_;
 pub(crate) mod bo_tx_bu_;
 pub(crate) mod bu_;
 pub(crate) mod comments;
+pub mod message_layout;
 pub(crate) mod sg_;
 pub(crate) mod strings;
 pub(crate) mod val_;

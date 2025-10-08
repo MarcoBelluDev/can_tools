@@ -13,7 +13,6 @@ SlotMap-backed arenas (stable keys), order-aware iteration and caching in sorts.
 
 - DBC parsing → build an in-memory `DatabaseDBC` (nodes, messages, signals).
 - ASC parsing → parse Vector ASCII traces into a `CanLog` model.
-- ARXML parsing → extract CAN clusters into `DatabaseARXML` entries. Feature is currently in development and it is not ready yet.
 
 This README documents the library API (no application/UI specifics).
 

@@ -14,14 +14,17 @@
 //! Docs updated: 2025-09-03 — sorts now use cached keys to reduce per-compare allocations.
 //!
 
-use slotmap::{SlotMap, new_key_type};
+use slotmap::{Key, SlotMap, new_key_type};
 use std::collections::{BTreeMap, HashMap};
 
-use crate::dbc::types::{
-    attributes::{AttributeSpec, AttributeValue},
-    message::{IdFormat, MessageDBC, MuxInfo, MuxRole, MuxSelector},
-    node::NodeDBC,
-    signal::{Endianness, SignalDBC, Signess},
+use crate::dbc::{
+    core::message_layout,
+    types::{
+        attributes::{AttributeSpec, AttributeValue},
+        message::{IdFormat, MessageDBC, MuxInfo, MuxRole, MuxSelector},
+        node::NodeDBC,
+        signal::{Endianness, SignalDBC, Signess},
+    },
 };
 
 // --- Stable keys (SlotMap) ---
@@ -727,7 +730,32 @@ impl DatabaseDBC {
         mux_role: MuxRole,
         mux_selector: Option<MuxSelector>,
     ) -> Result<SignalKey, String> {
-        // if signal is Multiplexed, try to guess the Multiplexor if there is only one in the message
+        // check if the SignalDBC is already associated to a MessageDBC
+        let Some(signal) = self.get_sig_by_key(sig_key) else {
+            return Err("Signal not found for given SignalKey".to_string());
+        };
+        if !signal.message.is_null() {
+            let mkey: MessageKey = signal.message;
+            let Some(message) = self.get_message_by_key(mkey) else {
+                return Err("Signal is already associated to an Unknown Message.".to_string());
+            };
+            let mname: &String = &message.name;
+            let mid_hex: &String = &message.id_hex;
+            return Err(format!(
+                "Signal is already associated to Message {} with ID {}",
+                mname, mid_hex
+            ));
+        }
+
+        // check if the signal bit_start and bit_length are not too big for Message.bytes_length
+        let Some(message) = self.get_message_by_key(msg_key) else {
+            return Err("Message not found for the provided MessageKey.".to_string());
+        };
+        let dlc: u16 = message.byte_length;
+        let endianness: Endianness = signal.endian.clone();
+        message_layout::check_signal_fits(dlc, bit_start, bit_length, endianness)?;
+
+        // if SignalDBC is Multiplexed, try to guess the Multiplexor if there is only one in the message
         let inferred_switch: Option<SignalKey> = if mux_role == MuxRole::Multiplexed {
             self.get_message_by_key(msg_key).and_then(|msg| {
                 if msg.mux_multiplexors.len() == 1 {

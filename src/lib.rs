@@ -1,7 +1,7 @@
 //! # can_tools
 //!
 //! Rust utilities for parsing and modeling **automotive CAN** data.
-//! Default derive of this library include .dbc parser, .asc parser and .arxml parser
+//! Default derive of this library include .dbc parser and .asc parser
 //! Use feature flag to use only a specific feature
 //!
 //! ## Highlights
@@ -13,13 +13,9 @@
 //!   [`CanLog`](crate::asc::types::canlog::CanLog). It keeps per `(id, channel)`
 //!   only the index of the most recent frame and formats absolute timestamps
 //!   with a lightweight formatter.
-//! - ARXML parser: Feature is currently in development and not ready yet.
-//!   Please, do not use it.
 //!
-//! Docs updated: 2025-09-03.
+//! Docs updated: 8 October 2025
 //!
-#[cfg(feature = "arxml")]
-pub mod arxml;
 #[cfg(feature = "asc")]
 pub mod asc;
 #[cfg(feature = "dbc")]
