@@ -15,7 +15,7 @@
 //!
 
 use slotmap::{Key, SlotMap, new_key_type};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::dbc::{
     core::message_layout,
@@ -139,20 +139,33 @@ impl DatabaseDBC {
         msg_key: MessageKey,
         node_key: NodeKey,
     ) -> Result<(), String> {
-        let msg_signals: Vec<SignalKey> = {
-            // check that a MessageDBC exist for given MessageKey
-            let Some(message) = self.get_message_by_key_mut(msg_key) else {
-                return Err("Message not found for the provided MessageKey.".into());
-            };
+        let mut pending_tx: Vec<SignalKey>;
+        {
+            let message = self
+                .get_message_by_key(msg_key)
+                .ok_or_else(|| "Message not found for the provided MessageKey.".to_string())?;
+            let node = self
+                .get_node_by_key(node_key)
+                .ok_or_else(|| "Node not found for the provided NodeKey.".to_string())?;
 
-            // add the NodeKey to MessageDBC if not already present
-            if !message.sender_nodes.contains(&node_key) {
-                message.sender_nodes.push(node_key);
-            }
+            // signals of the Message that needs to be added as NodeDBC.tx_signals
+            pending_tx = message
+                .signals
+                .iter()
+                .copied()
+                .filter(|sig| !node.tx_signals.contains(sig))
+                .collect();
+        }
 
-            // clone the signals inside the message to avoid borrow issues
-            message.signals.clone()
+        // check that a MessageDBC exist for given MessageKey
+        let Some(message) = self.get_message_by_key_mut(msg_key) else {
+            return Err("Message not found for the provided MessageKey.".into());
         };
+
+        // add the NodeKey to MessageDBC if not already present
+        if !message.sender_nodes.contains(&node_key) {
+            message.sender_nodes.push(node_key);
+        }
 
         // check that a NodeDBC exist for given NodeKey
         let Some(node) = self.get_node_by_key_mut(node_key) else {
@@ -164,11 +177,9 @@ impl DatabaseDBC {
             node.messages_sent.push(msg_key);
         }
 
-        // add the SignalKeys to NodeDBC if not already present
-        for signal_key in msg_signals {
-            if !node.tx_signals.contains(&signal_key) {
-                node.tx_signals.push(signal_key);
-            }
+        // add the SignalKeys missing from NodeDBC
+        for signal_key in pending_tx.drain(..) {
+            node.tx_signals.push(signal_key);
         }
 
         Ok(())
@@ -180,30 +191,36 @@ impl DatabaseDBC {
         msg_key: MessageKey,
         node_key: NodeKey,
     ) -> Result<(), String> {
-        let msg_signals: Vec<SignalKey> = {
+        let mut to_prune: Vec<SignalKey>;
+        {
+            let message = self
+                .get_message_by_key(msg_key)
+                .ok_or_else(|| "Message not found for the provided MessageKey.".to_string())?;
+            // signals of the Message that needs to be removed as NodeDBC.tx_signals
+            to_prune = message.signals.iter().copied().collect();
+        }
+
+        {
             // check that a MessageDBC exist for given MessageKey
             let Some(message) = self.get_message_by_key_mut(msg_key) else {
                 return Err("Message not found for the provided MessageKey.".into());
             };
-
             // remove the NodeKey from MessageDBC.sender_nodes
             message.sender_nodes.retain(|x| x != &node_key);
-
-            // clone the signals inside the message to avoid borrow issues
-            message.signals.clone()
-        };
+        }
 
         // check that a NodeDBC exist for given NodeKey
         let Some(node) = self.get_node_by_key_mut(node_key) else {
             return Err("Node not found for the provided NodeKey.".into());
         };
 
-        // remove the MessageKey from NodeDBC.messages_sent
         node.messages_sent.retain(|x| x != &msg_key);
 
-        // remove the SignalKeys from NodeDBC.signal_sent
-        for signal_key in msg_signals {
-            node.tx_signals.retain(|x| x != &signal_key);
+        // remove the SignalKeys from NodeDBC.tx_signals
+        if !to_prune.is_empty() {
+            let prune_set: HashSet<SignalKey> = to_prune.drain(..).collect();
+            node.tx_signals
+                .retain(|sig| !prune_set.contains(sig));
         }
 
         Ok(())

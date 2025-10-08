@@ -3,10 +3,6 @@
 
 Rust utilities for parsing and modeling automotive CAN databases and logs.
 
-Updated 2025-09-03: streaming DBC reader (Windows-1252, single-pass transliteration),
-ASC absolute-time formatting optimized, latest-frame index maintenance optimized,
-SlotMap-backed arenas (stable keys), order-aware iteration and caching in sorts.
-
 ---
 
 ## Features
@@ -24,14 +20,14 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-can_tools = "1.2.15"
+can_tools = "1.3.4"
 ```
 
 Use only the DBC parser (disable default features):
 
 ```toml
 [dependencies]
-can_tools = { version = "1.2.15", default-features = false, features = ["dbc"] }
+can_tools = { version = "1.3.4", default-features = false, features = ["dbc"] }
 ```
 
 Minimal usage with DBC only:
@@ -148,18 +144,6 @@ for frame in &log.can_frames {
             sig.unit,
         );
     }
-}
-```
-
-### Parse ARXML (CAN clusters)
-
-```rust
-use can_tools::arxml;
-use can_tools::arxml::types::database::DatabaseARXML;
-
-let clusters: Vec<DatabaseARXML> = arxml::parse_from_file("network.arxml")?;
-for c in &clusters {
-    println!("{} [{}] v{}", c.name, c.bustype.to_str(), c.version);
 }
 ```
 
