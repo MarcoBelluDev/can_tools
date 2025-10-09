@@ -401,7 +401,8 @@ impl DatabaseDBC {
         // check if message with provided ID already exist
         if let Some(r) = self.get_msg_key_by_id(&id) {
             self.current_msg = Some(r); // set found message as current_msg
-            return Err(DatabaseError::MessageIdAlreadyAssigned { id });
+            let id_hex: String = id_to_hex(id);
+            return Err(DatabaseError::MessageIdAlreadyAssigned { id_hex });
         }
 
         let id_hex: String = id_to_hex(id).to_string();
@@ -952,6 +953,141 @@ impl DatabaseDBC {
         }
 
         Ok(sig_key)
+    }
+
+    /// Detaches a signal from a message, reversing [`Self::add_msg_sig_relation`].
+    pub fn remove_msg_sig_relation(
+        &mut self,
+        sig_key: SignalKey,
+        msg_key: MessageKey,
+    ) -> Result<(), DatabaseError> {
+        // Ensure the message exists.
+        self.get_message_by_key(msg_key)
+            .ok_or(DatabaseError::MessageMissing {
+                message_key: msg_key,
+            })?;
+
+        // Snapshot the signal state and verify that it is bound to the target message.
+        let mux_snapshot: Option<MuxInfo> = {
+            let signal = self
+                .get_sig_by_key(sig_key)
+                .ok_or(DatabaseError::SignalMissing {
+                    signal_key: sig_key,
+                })?;
+            if signal.message.is_null() {
+                return Err(DatabaseError::InconsistentState {
+                    details: "Signal is not associated with any message",
+                });
+            }
+            if signal.message != msg_key {
+                let associated_with = if let Some(message) = self.get_message_by_key(signal.message)
+                {
+                    format!("Message '{}' (ID {})", message.name, message.id_hex)
+                } else {
+                    "An unknown message".to_string()
+                };
+                return Err(DatabaseError::SignalAlreadyAssociated {
+                    signal: signal.name.clone(),
+                    associated_with,
+                });
+            }
+            signal.mux.clone()
+        };
+
+        let mut multiplexed_to_detach: Vec<SignalKey> = Vec::new();
+
+        {
+            let Some(message) = self.get_message_by_key_mut(msg_key) else {
+                return Err(DatabaseError::MessageMissing {
+                    message_key: msg_key,
+                });
+            };
+
+            let before = message.signals.len();
+            message.signals.retain(|&sk| sk != sig_key);
+            if before == message.signals.len() {
+                return Err(DatabaseError::InconsistentState {
+                    details: "Signal not registered within the message.",
+                });
+            }
+
+            if let Some(mux_info) = &mux_snapshot {
+                match mux_info.role {
+                    MuxRole::Multiplexor => {
+                        message.mux_multiplexors.retain(|&mk| mk != sig_key);
+                        if let Some(by_sel) = message.mux_cases.remove(&sig_key) {
+                            for sigs in by_sel.values() {
+                                multiplexed_to_detach.extend(sigs.iter().copied());
+                            }
+                        }
+                    }
+                    MuxRole::Multiplexed => {
+                        if let Some(sw) = mux_info.switch
+                            && let Some(by_sel) = message.mux_cases.get_mut(&sw) {
+                                by_sel.retain(|_, list| {
+                                    list.retain(|&sk| sk != sig_key);
+                                    !list.is_empty()
+                                });
+                                if by_sel.is_empty() {
+                                    message.mux_cases.remove(&sw);
+                                }
+                            }
+                    }
+                    MuxRole::None => {}
+                }
+            }
+        }
+
+        // Clear multiplexing switch references on dependents that previously pointed at this signal.
+        for dep in multiplexed_to_detach {
+            if let Some(sig) = self.get_sig_by_key_mut(dep)
+                && let Some(mi) = sig.mux.as_mut()
+                && mi.role == MuxRole::Multiplexed
+            {
+                mi.switch = None;
+            }
+        }
+
+        // Reset the detached signal metadata.
+        if let Some(signal) = self.get_sig_by_key_mut(sig_key) {
+            signal.message = MessageKey::default();
+            signal.mux = None;
+        }
+
+        // Remove the signal from every sender node's transmitted list.
+        let sender_nodes: Vec<NodeKey> = self
+            .get_message_by_key(msg_key)
+            .map(|m| m.sender_nodes.clone())
+            .unwrap_or_default();
+        for nk in sender_nodes {
+            if let Some(node) = self.get_node_by_key_mut(nk) {
+                node.tx_signals.retain(|&sk| sk != sig_key);
+            }
+        }
+
+        // Rebuild the receiver list for the message (union of the remaining signal receivers).
+        let new_receivers: Vec<NodeKey> = if let Some(message) = self.get_message_by_key(msg_key) {
+            let mut seen: HashSet<NodeKey> = HashSet::new();
+            let mut ordered: Vec<NodeKey> = Vec::new();
+            for &sk in &message.signals {
+                if let Some(sig) = self.get_sig_by_key(sk) {
+                    for &nk in &sig.receiver_nodes {
+                        if seen.insert(nk) {
+                            ordered.push(nk);
+                        }
+                    }
+                }
+            }
+            ordered
+        } else {
+            Vec::new()
+        };
+
+        if let Some(message) = self.get_message_by_key_mut(msg_key) {
+            message.receiver_nodes = new_receivers;
+        }
+
+        Ok(())
     }
 
     /// Create a new Signal from an existing one adding "_copy" to the name.

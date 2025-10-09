@@ -27,13 +27,17 @@ pub enum DbcParseError {
 pub enum MessageLayoutError {
     #[error("Signal Bit Length cannot be zero")]
     ZeroBitLength,
-    #[error("Out of bounds (Intel)! \nSignal end bit = {end} \nMessage total bits = {total_bits} (bytes={dlc})")]
+    #[error(
+        "Out of bounds (Intel)! \nSignal end bit = {end} \nMessage total bits = {total_bits} (bytes={dlc})"
+    )]
     IntelOutOfBounds {
         end: usize,
         total_bits: usize,
         dlc: u16,
     },
-    #[error("Out of bounds (Motorola)! \nSignal linearized  start = {start} \nMessage total bits = {total_bits} (bytes={dlc})")]
+    #[error(
+        "Out of bounds (Motorola)! \nSignal linearized  start = {start} \nMessage total bits = {total_bits} (bytes={dlc})"
+    )]
     MotorolaStartOutOfBounds {
         start: usize,
         total_bits: usize,
@@ -52,8 +56,8 @@ pub enum DatabaseError {
     NodeMissing { node_key: NodeKey },
     #[error("Message '{name}' already exists")]
     MessageAlreadyExists { name: String },
-    #[error("Message id {id} already assigned to an existing message")]
-    MessageIdAlreadyAssigned { id: u32 },
+    #[error("Message ID {id_hex} already assigned to an existing message")]
+    MessageIdAlreadyAssigned { id_hex: String },
     #[error("Message not found for key {message_key:?}")]
     MessageMissing { message_key: MessageKey },
     #[error("Signal not found for key {signal_key:?}")]
