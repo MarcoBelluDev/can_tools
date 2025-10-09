@@ -1,5 +1,6 @@
 use crate::dbc::core;
 use crate::dbc::types::database::DatabaseDBC;
+use crate::dbc::types::errors::DbcParseError;
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -24,32 +25,40 @@ use encoding_rs::WINDOWS_1252;
 ///
 /// The parsing logic is tolerant to extra spaces, comments, and multi-line strings.
 /// Multi-line comments for signals and nodes are correctly joined before parsing.
+/// The reader decodes the file as Windows-1252 and transliterates a handful of characters
+/// (e.g., `ü`, `ö`, `ß`) to ASCII fallbacks to keep downstream processing UTF-8 safe.
 ///
 /// # Parameters
 /// - `path`: Path to the `.dbc` file to parse.
 ///
 /// # Returns
 /// - `Ok(DatabaseDBC)` if the file was successfully read and parsed.
-/// - `Err(String)` if the file could not be opened or read.
+/// - `Err(DbcParseError)` detailing why the file could not be opened or read.
 ///
 /// # Errors
-/// Returns an `Err` with a human-readable error message if:
+/// Returns an `Err(DbcParseError)` if:
 /// - The file cannot be opened.
 /// - There are I/O errors while reading.
-/// - The DBC content is malformed beyond recovery (most parsing errors are ignored and result in missing elements).
+/// - The path does not end in `.dbc`.
 ///
 /// # Notes
 /// - This function is the main entry point for converting a DBC file into a structured [`DatabaseDBC`].
 /// - Internal parsing details are handled by [`DatabaseDBC`] methods and are **not** part of the public API.
 /// - Parsing stops only at the end of the file; malformed lines are skipped.
 ///
-pub fn from_file(path: &str) -> Result<DatabaseDBC, String> {
+pub fn from_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
     // check if provided file has .dbc format
     if !path.ends_with(".dbc") {
-        return Err("Not a valid .dbc file format".to_string());
+        return Err(DbcParseError::InvalidExtension {
+            path: path.to_string(),
+        });
     }
 
-    let file: File = File::open(path).map_err(|e| format!("Error opening file: {}", e))?;
+    let path_owned: String = path.to_string();
+    let file: File = File::open(path).map_err(|source| DbcParseError::OpenFile {
+        path: path_owned.clone(),
+        source,
+    })?;
     let mut reader: BufReader<File> = BufReader::new(file);
 
     // Initialize DatabaseDBC
@@ -59,40 +68,44 @@ pub fn from_file(path: &str) -> Result<DatabaseDBC, String> {
     let mut raw_line: Vec<u8> = Vec::with_capacity(256);
 
     // For each line, transform german characters in UTF-8 compatible characters
-    let read_decoded_line =
-        |reader: &mut BufReader<File>, buf: &mut Vec<u8>| -> Result<Option<String>, String> {
-            buf.clear();
-            let read = reader
-                .read_until(b'\n', buf)
-                .map_err(|e| format!("Read error: {}", e))?;
-            if read == 0 {
-                return Ok(None);
-            }
-            let (s, _, _) = WINDOWS_1252.decode(buf);
-            let src: String = s.into_owned();
-            let mut out: String = String::with_capacity(src.len());
-            for ch in src.chars() {
-                match ch {
-                    'ü' => out.push('u'),
-                    'ö' => out.push('o'),
-                    'ä' => out.push('a'),
-                    'ß' => {
-                        out.push('s');
-                        out.push('s');
-                    }
-                    'Ü' => out.push('U'),
-                    'Ö' => out.push('O'),
-                    'Ä' => out.push('A'),
-                    '¿' => out.push('?'),
-                    _ => out.push(ch),
+    let read_decoded_line = |reader: &mut BufReader<File>,
+                             buf: &mut Vec<u8>|
+     -> Result<Option<String>, DbcParseError> {
+        buf.clear();
+        let read = reader
+            .read_until(b'\n', buf)
+            .map_err(|source| DbcParseError::Read {
+                path: path_owned.clone(),
+                source,
+            })?;
+        if read == 0 {
+            return Ok(None);
+        }
+        let (s, _, _) = WINDOWS_1252.decode(buf);
+        let src: String = s.into_owned();
+        let mut out: String = String::with_capacity(src.len());
+        for ch in src.chars() {
+            match ch {
+                'ü' => out.push('u'),
+                'ö' => out.push('o'),
+                'ä' => out.push('a'),
+                'ß' => {
+                    out.push('s');
+                    out.push('s');
                 }
+                'Ü' => out.push('U'),
+                'Ö' => out.push('O'),
+                'Ä' => out.push('A'),
+                '¿' => out.push('?'),
+                _ => out.push(ch),
             }
-            // trim trailing CR/LF to behave like .lines()
-            while out.ends_with(['\n', '\r']) {
-                out.pop();
-            }
-            Ok(Some(out))
-        };
+        }
+        // trim trailing CR/LF to behave like .lines()
+        while out.ends_with(['\n', '\r']) {
+            out.pop();
+        }
+        Ok(Some(out))
+    };
 
     // Read and process each .dbc line
     loop {

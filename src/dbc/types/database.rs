@@ -11,7 +11,7 @@
 //! Signal decoding utilities live on [`SignalDBC`]: `compile_inline()`, `extract_raw_u64/i64()`.
 //! Conversion to `SignalLog` is provided under `asc::core::signal_conversion` when the `asc` feature is enabled.
 //!
-//! Docs updated: 2025-09-03 — sorts now use cached keys to reduce per-compare allocations.
+//! Docs updated: 2025-10-09 — refreshed field documentation and clarified ordering invariants.
 //!
 
 use slotmap::{Key, SlotMap, new_key_type};
@@ -21,6 +21,7 @@ use crate::dbc::{
     core::message_layout,
     types::{
         attributes::{AttributeSpec, AttributeValue},
+        errors::DatabaseError,
         message::{IdFormat, MessageDBC, MuxInfo, MuxRole, MuxSelector},
         node::NodeDBC,
         signal::{Endianness, SignalDBC, Signess},
@@ -40,13 +41,13 @@ new_key_type! { pub struct SignalKey; }
 #[derive(Default, Clone, Debug)]
 pub struct DatabaseDBC {
     // --- General information ---
-    /// DatabaseDBC version string.
+    /// Human-readable database name (`BA_ "DBName"`), empty if absent.
     pub name: String,
-    /// DatabaseDBC BusType
+    /// Bus type advertised by `BA_ "BusType"` (defaults to `BusType::Can`).
     pub bustype: BusType,
-    /// DatabaseDBC version string.
+    /// Free-form version string parsed from the `VERSION` line.
     pub version: String,
-    /// DatabaseDBC comment.
+    /// Global database comment (populated by the standalone `CM_ "..."` statement).
     pub comment: String,
 
     // --- Main storage (stable-key maps) ---
@@ -106,10 +107,12 @@ pub struct DatabaseDBC {
 impl DatabaseDBC {
     // --------- Nodes --------
     /// Adds a node to the database, seeding attributes with spec defaults, and returns the `NodeKey`.
-    pub fn add_node(&mut self, name: &str) -> Result<NodeKey, String> {
+    pub fn add_node(&mut self, name: &str) -> Result<NodeKey, DatabaseError> {
         // check that the node name is not already present
         if self.get_node_key_by_name(name).is_some() {
-            return Err("Node name already present.".to_string());
+            return Err(DatabaseError::NodeAlreadyExists {
+                name: name.to_string(),
+            });
         }
 
         let mut node: NodeDBC = NodeDBC {
@@ -138,15 +141,17 @@ impl DatabaseDBC {
         &mut self,
         msg_key: MessageKey,
         node_key: NodeKey,
-    ) -> Result<(), String> {
+    ) -> Result<(), DatabaseError> {
         let mut pending_tx: Vec<SignalKey>;
         {
-            let message = self
-                .get_message_by_key(msg_key)
-                .ok_or_else(|| "Message not found for the provided MessageKey.".to_string())?;
+            let message =
+                self.get_message_by_key(msg_key)
+                    .ok_or(DatabaseError::MessageMissing {
+                        message_key: msg_key,
+                    })?;
             let node = self
                 .get_node_by_key(node_key)
-                .ok_or_else(|| "Node not found for the provided NodeKey.".to_string())?;
+                .ok_or(DatabaseError::NodeMissing { node_key })?;
 
             // signals of the Message that needs to be added as NodeDBC.tx_signals
             pending_tx = message
@@ -159,7 +164,9 @@ impl DatabaseDBC {
 
         // check that a MessageDBC exist for given MessageKey
         let Some(message) = self.get_message_by_key_mut(msg_key) else {
-            return Err("Message not found for the provided MessageKey.".into());
+            return Err(DatabaseError::MessageMissing {
+                message_key: msg_key,
+            });
         };
 
         // add the NodeKey to MessageDBC if not already present
@@ -169,7 +176,7 @@ impl DatabaseDBC {
 
         // check that a NodeDBC exist for given NodeKey
         let Some(node) = self.get_node_by_key_mut(node_key) else {
-            return Err("Node not found for the provided NodeKey.".into());
+            return Err(DatabaseError::NodeMissing { node_key });
         };
 
         // add the MessageKey to NodeDBC if not already present
@@ -190,20 +197,24 @@ impl DatabaseDBC {
         &mut self,
         msg_key: MessageKey,
         node_key: NodeKey,
-    ) -> Result<(), String> {
+    ) -> Result<(), DatabaseError> {
         let mut to_prune: Vec<SignalKey>;
         {
-            let message = self
-                .get_message_by_key(msg_key)
-                .ok_or_else(|| "Message not found for the provided MessageKey.".to_string())?;
+            let message =
+                self.get_message_by_key(msg_key)
+                    .ok_or(DatabaseError::MessageMissing {
+                        message_key: msg_key,
+                    })?;
             // signals of the Message that needs to be removed as NodeDBC.tx_signals
-            to_prune = message.signals.iter().copied().collect();
+            to_prune = message.signals.to_vec();
         }
 
         {
             // check that a MessageDBC exist for given MessageKey
             let Some(message) = self.get_message_by_key_mut(msg_key) else {
-                return Err("Message not found for the provided MessageKey.".into());
+                return Err(DatabaseError::MessageMissing {
+                    message_key: msg_key,
+                });
             };
             // remove the NodeKey from MessageDBC.sender_nodes
             message.sender_nodes.retain(|x| x != &node_key);
@@ -211,7 +222,7 @@ impl DatabaseDBC {
 
         // check that a NodeDBC exist for given NodeKey
         let Some(node) = self.get_node_by_key_mut(node_key) else {
-            return Err("Node not found for the provided NodeKey.".into());
+            return Err(DatabaseError::NodeMissing { node_key });
         };
 
         node.messages_sent.retain(|x| x != &msg_key);
@@ -219,8 +230,7 @@ impl DatabaseDBC {
         // remove the SignalKeys from NodeDBC.tx_signals
         if !to_prune.is_empty() {
             let prune_set: HashSet<SignalKey> = to_prune.drain(..).collect();
-            node.tx_signals
-                .retain(|sig| !prune_set.contains(sig));
+            node.tx_signals.retain(|sig| !prune_set.contains(sig));
         }
 
         Ok(())
@@ -228,11 +238,13 @@ impl DatabaseDBC {
 
     /// Create a new Node from an existing one adding "_copy" to the name
     /// Messages and Signals are modified to include new node relations
-    pub fn copy_node(&mut self, source_node_key: NodeKey) -> Result<NodeKey, String> {
+    pub fn copy_node(&mut self, source_node_key: NodeKey) -> Result<NodeKey, DatabaseError> {
         let new_node: NodeDBC = {
             // check that the source node key correspond to a Node
             let Some(node) = self.get_node_by_key(source_node_key) else {
-                return Err("Selected NodeKey does not exist".to_string());
+                return Err(DatabaseError::NodeMissing {
+                    node_key: source_node_key,
+                });
             };
 
             // check that new copy name does not already exist
@@ -254,7 +266,9 @@ impl DatabaseDBC {
         // Validate that related messages still exist
         for &msg_key in &messages_sent {
             if self.get_message_by_key(msg_key).is_none() {
-                return Err("Message not found for the provided MessageKey.".to_string());
+                return Err(DatabaseError::MessageMissing {
+                    message_key: msg_key,
+                });
             }
         }
 
@@ -263,10 +277,14 @@ impl DatabaseDBC {
             Vec::with_capacity(rx_signals.len());
         for &sig_key in &rx_signals {
             let Some(signal) = self.get_sig_by_key(sig_key) else {
-                return Err("Signal not found for given SignalKey".to_string());
+                return Err(DatabaseError::SignalMissing {
+                    signal_key: sig_key,
+                });
             };
             if self.get_message_by_key(signal.message).is_none() {
-                return Err("Message not found for the provided MessageKey.".to_string());
+                return Err(DatabaseError::MessageMissing {
+                    message_key: signal.message,
+                });
             }
             signal_message_pairs.push((sig_key, signal.message));
         }
@@ -285,7 +303,9 @@ impl DatabaseDBC {
         for (sig_key, msg_key) in signal_message_pairs {
             {
                 let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
-                    return Err("Signal not found for given SignalKey".to_string());
+                    return Err(DatabaseError::SignalMissing {
+                        signal_key: sig_key,
+                    });
                 };
                 if !signal.receiver_nodes.contains(&new_key) {
                     signal.receiver_nodes.push(new_key);
@@ -297,7 +317,9 @@ impl DatabaseDBC {
                     message.receiver_nodes.push(new_key);
                 }
             } else {
-                return Err("Message not found for the provided MessageKey.".to_string());
+                return Err(DatabaseError::MessageMissing {
+                    message_key: msg_key,
+                });
             }
         }
 
@@ -305,11 +327,11 @@ impl DatabaseDBC {
     }
 
     /// Deletes the node identified by `node_key`, removing every reference across the database.
-    pub fn delete_node(&mut self, node_key: NodeKey) -> Result<(), String> {
+    pub fn delete_node(&mut self, node_key: NodeKey) -> Result<(), DatabaseError> {
         let removed_node: NodeDBC = self
             .nodes
             .remove(node_key)
-            .ok_or_else(|| "Node not found for the provided NodeKey.".to_string())?;
+            .ok_or(DatabaseError::NodeMissing { node_key })?;
 
         let node_name_lower: String = removed_node.name.to_lowercase();
 
@@ -367,17 +389,19 @@ impl DatabaseDBC {
         name: &str,
         id: u32,
         byte_length: u16,
-    ) -> Result<MessageKey, String> {
+    ) -> Result<MessageKey, DatabaseError> {
         // check if message with provided name already exist
         if let Some(r) = self.get_msg_key_by_name(name) {
             self.current_msg = Some(r); // set found message as current_msg
-            return Err("Message name already present.".to_string());
+            return Err(DatabaseError::MessageAlreadyExists {
+                name: name.to_string(),
+            });
         }
 
         // check if message with provided ID already exist
         if let Some(r) = self.get_msg_key_by_id(&id) {
             self.current_msg = Some(r); // set found message as current_msg
-            return Err("Message ID already assigned to an existing Message.".to_string());
+            return Err(DatabaseError::MessageIdAlreadyAssigned { id });
         }
 
         let id_hex: String = id_to_hex(id).to_string();
@@ -413,11 +437,13 @@ impl DatabaseDBC {
     }
 
     /// Deletes the Message identified by `msg_key`, removing every reference across the database.
-    pub fn delete_message(&mut self, msg_key: MessageKey) -> Result<(), String> {
-        let removed_msg: MessageDBC = self
-            .messages
-            .remove(msg_key)
-            .ok_or_else(|| "Message not found for the provided MessageKey.".to_string())?;
+    pub fn delete_message(&mut self, msg_key: MessageKey) -> Result<(), DatabaseError> {
+        let removed_msg: MessageDBC =
+            self.messages
+                .remove(msg_key)
+                .ok_or(DatabaseError::MessageMissing {
+                    message_key: msg_key,
+                })?;
 
         let msg_name_lower: String = removed_msg.name.to_lowercase();
 
@@ -448,12 +474,17 @@ impl DatabaseDBC {
 
     /// Create a new Message from an existing one adding "_copy" to the name and +1 to ID.
     /// Inside Signals will be copied too.
-    pub fn copy_message(&mut self, source_msg_key: MessageKey) -> Result<MessageKey, String> {
+    pub fn copy_message(
+        &mut self,
+        source_msg_key: MessageKey,
+    ) -> Result<MessageKey, DatabaseError> {
         // check that the source message key correspond to a Message
         let (src_name, src_id, src_byte_len, src_comment, src_attrs, src_sender_nodes, src_signals) = {
-            let source_msg = self
-                .get_message_by_key(source_msg_key)
-                .ok_or_else(|| "Selected MessageKey does not exist".to_string())?;
+            let source_msg =
+                self.get_message_by_key(source_msg_key)
+                    .ok_or(DatabaseError::MessageMissing {
+                        message_key: source_msg_key,
+                    })?;
             (
                 source_msg.name.clone(),
                 source_msg.id,
@@ -481,7 +512,9 @@ impl DatabaseDBC {
 
         let new_msg_key: MessageKey = self.add_message(&new_name, new_id, src_byte_len)?;
         let Some(new_msg) = self.get_message_by_key_mut(new_msg_key) else {
-            return Err("It was not possible to find new created Message".to_string());
+            return Err(DatabaseError::InconsistentState {
+                details: "newly created message missing",
+            });
         };
 
         // update comments and attributes
@@ -489,7 +522,7 @@ impl DatabaseDBC {
         new_msg.attributes = src_attrs;
 
         // useful info from old_signals
-        let useful_sig_info: Vec<(SignalKey, u16, u16, MuxRole, Option<MuxSelector>)> = src_signals
+        let useful_sig_info: Vec<(SignalKey, MuxRole, Option<MuxSelector>)> = src_signals
             .iter()
             .filter_map(|&old_sk| {
                 let s = self.get_sig_by_key(old_sk)?;
@@ -498,21 +531,14 @@ impl DatabaseDBC {
                 } else {
                     (MuxRole::None, None)
                 };
-                Some((old_sk, s.bit_start, s.bit_length, role, sel))
+                Some((old_sk, role, sel))
             })
             .collect();
 
         // copy internal signals and attach them to new message
-        for (old_sk, bit_start, bit_len, role, sel) in useful_sig_info {
+        for (old_sk, role, sel) in useful_sig_info {
             if let Ok(new_sk) = self.copy_signal(old_sk) {
-                let _ = self.add_msg_sig_relation(
-                    new_sk,
-                    new_msg_key,
-                    bit_start,
-                    bit_len,
-                    role,
-                    sel.clone(),
-                );
+                let _ = self.add_msg_sig_relation(new_sk, new_msg_key, role, sel.clone());
             }
         }
 
@@ -624,11 +650,13 @@ impl DatabaseDBC {
     }
 
     /// Deletes the Signal identified by `sig_key`, removing every reference across the database.
-    pub fn delete_signal(&mut self, sig_key: SignalKey) -> Result<(), String> {
-        let removed_sig: SignalDBC = self
-            .signals
-            .remove(sig_key)
-            .ok_or_else(|| "Signal not found for the provided SignalKey.".to_string())?;
+    pub fn delete_signal(&mut self, sig_key: SignalKey) -> Result<(), DatabaseError> {
+        let removed_sig: SignalDBC =
+            self.signals
+                .remove(sig_key)
+                .ok_or(DatabaseError::SignalMissing {
+                    signal_key: sig_key,
+                })?;
 
         let sig_name_lower: String = removed_sig.name.to_lowercase();
 
@@ -657,9 +685,11 @@ impl DatabaseDBC {
         &mut self,
         sig_key: SignalKey,
         node_key: NodeKey,
-    ) -> Result<(), String> {
+    ) -> Result<(), DatabaseError> {
         let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
-            return Err("Signal not found for given SignalKey".to_string());
+            return Err(DatabaseError::SignalMissing {
+                signal_key: sig_key,
+            });
         };
 
         let msg_key: MessageKey = signal.message;
@@ -670,7 +700,7 @@ impl DatabaseDBC {
         }
 
         let Some(node) = self.get_node_by_key_mut(node_key) else {
-            return Err("Node not found for given NodeKey".to_string());
+            return Err(DatabaseError::NodeMissing { node_key });
         };
 
         // add the SignalKey to NodeDBC if not already present
@@ -680,7 +710,9 @@ impl DatabaseDBC {
 
         // check that the MessageDBC containing SignalKey contains NodeKey as receiver
         let Some(message) = self.get_message_by_key_mut(msg_key) else {
-            return Err("Message not found for given MessageKey".to_string());
+            return Err(DatabaseError::MessageMissing {
+                message_key: msg_key,
+            });
         };
 
         // add the NodeKey to MessageDBC if not already present
@@ -696,9 +728,11 @@ impl DatabaseDBC {
         &mut self,
         sig_key: SignalKey,
         node_key: NodeKey,
-    ) -> Result<(), String> {
+    ) -> Result<(), DatabaseError> {
         let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
-            return Err("Signal not found for given SignalKey".to_string());
+            return Err(DatabaseError::SignalMissing {
+                signal_key: sig_key,
+            });
         };
 
         let msg_key: MessageKey = signal.message;
@@ -707,7 +741,7 @@ impl DatabaseDBC {
         signal.receiver_nodes.retain(|x| x != &node_key);
 
         let Some(node) = self.get_node_by_key_mut(node_key) else {
-            return Err("Node not found for given NodeKey".to_string());
+            return Err(DatabaseError::NodeMissing { node_key });
         };
 
         // remove the SignalKey from NodeDBC.rx_signals
@@ -716,7 +750,7 @@ impl DatabaseDBC {
         // check if the NodeKey still has some signal from the MessageDBC
         let still_receives_any_from_msg: bool = {
             let Some(node) = self.get_node_by_key(node_key) else {
-                return Err("Node not found for given NodeKey".to_string());
+                return Err(DatabaseError::NodeMissing { node_key });
             };
 
             node.rx_signals.iter().copied().any(|sk| {
@@ -729,7 +763,9 @@ impl DatabaseDBC {
         // if there are no more signals from that MessageDBC, remove the Nodekey as receiver of it
         if !still_receives_any_from_msg {
             let Some(message) = self.get_message_by_key_mut(msg_key) else {
-                return Err("Message not found for given MessageKey".to_string());
+                return Err(DatabaseError::MessageMissing {
+                    message_key: msg_key,
+                });
             };
             message.receiver_nodes.retain(|x| x != &node_key);
         }
@@ -742,31 +778,35 @@ impl DatabaseDBC {
         &mut self,
         sig_key: SignalKey,
         msg_key: MessageKey,
-        bit_start: u16,
-        bit_length: u16,
         mux_role: MuxRole,
         mux_selector: Option<MuxSelector>,
-    ) -> Result<SignalKey, String> {
+    ) -> Result<SignalKey, DatabaseError> {
         // check if the SignalDBC is already associated to a MessageDBC
         let Some(signal) = self.get_sig_by_key(sig_key) else {
-            return Err("Signal not found for given SignalKey".to_string());
+            return Err(DatabaseError::SignalMissing {
+                signal_key: sig_key,
+            });
         };
+        let bit_start: u16 = signal.bit_start;
+        let bit_length: u16 = signal.bit_length;
         if !signal.message.is_null() {
             let mkey: MessageKey = signal.message;
-            let Some(message) = self.get_message_by_key(mkey) else {
-                return Err("Signal is already associated to an Unknown Message.".to_string());
+            let associated_with = if let Some(message) = self.get_message_by_key(mkey) {
+                format!("message '{}' (ID {})", message.name, message.id_hex)
+            } else {
+                "an unknown message".to_string()
             };
-            let mname: &String = &message.name;
-            let mid_hex: &String = &message.id_hex;
-            return Err(format!(
-                "Signal is already associated to Message {} with ID {}",
-                mname, mid_hex
-            ));
+            return Err(DatabaseError::SignalAlreadyAssociated {
+                signal: signal.name.clone(),
+                associated_with,
+            });
         }
 
         // check if the signal bit_start and bit_length are not too big for Message.bytes_length
         let Some(message) = self.get_message_by_key(msg_key) else {
-            return Err("Message not found for the provided MessageKey.".to_string());
+            return Err(DatabaseError::MessageMissing {
+                message_key: msg_key,
+            });
         };
         let dlc: u16 = message.byte_length;
         let endianness: Endianness = signal.endian.clone();
@@ -788,7 +828,9 @@ impl DatabaseDBC {
         // We'll need receiver_nodes later to aggregate into MessageDBC.receiver_nodes
         let msg_receivers: Vec<NodeKey> = {
             let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
-                return Err("Signal not found for given SignalKey".to_string());
+                return Err(DatabaseError::SignalMissing {
+                    signal_key: sig_key,
+                });
             };
 
             // update relevant signal fields
@@ -814,7 +856,9 @@ impl DatabaseDBC {
 
         {
             let Some(message) = self.get_message_by_key_mut(msg_key) else {
-                return Err("Message not found for the provided MessageKey.".to_string());
+                return Err(DatabaseError::MessageMissing {
+                    message_key: msg_key,
+                });
             };
 
             // add the signal within current message
@@ -860,9 +904,7 @@ impl DatabaseDBC {
                 // Usually, this should never happen because Multiplexor must always be first line in a message
                 let dep_to_attach: Vec<(SignalKey, MuxSelector)> = {
                     let Some(msg) = self.get_message_by_key(msg_key) else {
-                        return Err(
-                            "Message missing while updating multiplexor relation.".to_string()
-                        );
+                        return Err(DatabaseError::MessageMissingDuringMultiplexing);
                     };
                     msg.signals
                         .iter()
@@ -913,7 +955,7 @@ impl DatabaseDBC {
     }
 
     /// Create a new Signal from an existing one adding "_copy" to the name.
-    pub fn copy_signal(&mut self, source_sig_key: SignalKey) -> Result<SignalKey, String> {
+    pub fn copy_signal(&mut self, source_sig_key: SignalKey) -> Result<SignalKey, DatabaseError> {
         // check that the source node key correspond to a Node
         let (
             src_name,
@@ -926,12 +968,16 @@ impl DatabaseDBC {
             src_unit,
             src_value_table,
             src_receivers,
+            bit_start,
+            bit_length,
             src_comment,
             src_attrs,
         ) = {
             let s = self
                 .get_sig_by_key(source_sig_key)
-                .ok_or_else(|| "Selected SignalKey does not exist".to_string())?;
+                .ok_or(DatabaseError::SignalMissing {
+                    signal_key: source_sig_key,
+                })?;
             (
                 s.name.clone(),
                 s.endian.clone(),
@@ -943,6 +989,8 @@ impl DatabaseDBC {
                 s.unit_of_measurement.clone(),
                 s.value_table.clone(),
                 s.receiver_nodes.clone(),
+                s.bit_start,
+                s.bit_length,
                 s.comment.clone(),
                 s.attributes.clone(),
             )
@@ -961,13 +1009,17 @@ impl DatabaseDBC {
         );
         {
             let Some(new_sig) = self.get_sig_by_key_mut(new_sig_key) else {
-                return Err("It was not possible to find new created Signal".to_string());
+                return Err(DatabaseError::InconsistentState {
+                    details: "newly created signal missing",
+                });
             };
 
             // update comments and attributes
             new_sig.comment = src_comment;
             new_sig.attributes = src_attrs;
             new_sig.value_table = src_value_table;
+            new_sig.bit_length = bit_length;
+            new_sig.bit_start = bit_start;
 
             for node_key in src_receivers {
                 let _ = self.add_sig_receiver_node(new_sig_key, node_key);
@@ -1323,7 +1375,7 @@ impl DatabaseDBC {
         }
     }
 
-    /// Clear the database
+    /// Resets the entire database to an empty state (drops nodes, messages, signals, and metadata).
     pub fn clear(&mut self) {
         *self = DatabaseDBC::default();
     }
@@ -1338,7 +1390,7 @@ pub enum BusType {
 }
 
 impl BusType {
-    /// Returns a user-friendly string (e.g., `"CAN"`, `"CAN FD"`).
+    /// Returns a display-friendly label (allocates a new `String`).
     pub fn to_str(&self) -> String {
         match self {
             BusType::Can => "CAN".to_string(),

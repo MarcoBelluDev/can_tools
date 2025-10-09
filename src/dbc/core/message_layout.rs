@@ -1,3 +1,4 @@
+use crate::dbc::types::errors::MessageLayoutError;
 use crate::dbc::types::signal::Endianness;
 
 /// Verify that (bit_start, bit_length) fits within the frame defined by DLC.
@@ -12,23 +13,11 @@ pub fn check_signal_fits(
     bit_start: u16,
     bit_length: u16,
     endianness: Endianness,
-) -> Result<(), String> {
-    let dlc_bytes: Option<usize> = match dlc {
-        0..=8 => Some(dlc as usize),
-        9 => Some(12),
-        10 => Some(16),
-        11 => Some(20),
-        12 => Some(24),
-        13 => Some(32),
-        14 => Some(48),
-        15 => Some(64),
-        _ => None,
-    };
-    let bytes: usize = dlc_bytes.ok_or_else(|| "Invalid DLC".to_string())?;
+) -> Result<(), MessageLayoutError> {
     if bit_length == 0 {
-        return Err("bit_length cannot be 0.".into());
+        return Err(MessageLayoutError::ZeroBitLength);
     }
-    let total_bits: usize = bytes * 8;
+    let total_bits: usize = (dlc as usize) * 8;
 
     match endianness {
         Endianness::Intel => {
@@ -37,10 +26,11 @@ pub fn check_signal_fits(
             if end < total_bits {
                 Ok(())
             } else {
-                Err(format!(
-                    "Out of bounds (Intel): end={} ≥ total_bits={} (bytes={}, dlc={}).",
-                    end, total_bits, bytes, dlc
-                ))
+                Err(MessageLayoutError::IntelOutOfBounds {
+                    end,
+                    total_bits,
+                    dlc,
+                })
             }
         }
         Endianness::Motorola => {
@@ -50,16 +40,17 @@ pub fn check_signal_fits(
             let linearized_end: isize = linearized_start as isize - (bit_length as isize - 1);
 
             if linearized_start >= total_bits {
-                return Err(format!(
-                    "Out of bounds (Motorola): lin_start={} ≥ total_bits={} (bytes={}, dlc={}).",
-                    linearized_start, total_bits, bytes, dlc
-                ));
+                return Err(MessageLayoutError::MotorolaStartOutOfBounds {
+                    start: linearized_start,
+                    total_bits,
+                    dlc,
+                });
             }
             if linearized_end < 0 {
-                return Err(format!(
-                    "Out of bounds (Motorola): lin_end={} < 0 (bytes={}, dlc={}).",
-                    linearized_end, bytes, dlc
-                ));
+                return Err(MessageLayoutError::MotorolaEndOutOfBounds {
+                    end: linearized_end,
+                    dlc,
+                });
             }
             // Safe: (linearized_end as usize) < total_bits because linearized_end >= 0 and linearized_end <= linearized_start < total_bits
             Ok(())

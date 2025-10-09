@@ -156,6 +156,13 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     // create the signal
     let sig_key: SignalKey = db.add_signal(&name, endian, sign, factor, offset, min, max, &unit);
 
+    // map bit_start and bit_length info
+    let Some(signal) = db.get_sig_by_key_mut(sig_key) else {
+        return;
+    };
+    signal.bit_length = bit_length;
+    signal.bit_start = bit_start;
+
     // add NodeKeys to SignalDBC.receiver_nodes
     // add SignalKeys to NodeDBC.signals_read
     for node_key in receiver_nodes.iter().copied() {
@@ -176,12 +183,5 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
     db.current_msg = Some(msg_key);
 
-    let _ = db.add_msg_sig_relation(
-        sig_key,
-        msg_key,
-        bit_start,
-        bit_length,
-        mux_role,
-        mux_selector,
-    );
+    let _ = db.add_msg_sig_relation(sig_key, msg_key, mux_role, mux_selector);
 }

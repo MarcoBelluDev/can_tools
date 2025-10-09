@@ -1,8 +1,8 @@
 //! # can_tools
 //!
 //! Rust utilities for parsing and modeling **automotive CAN** data.
-//! Default derive of this library include .dbc parser and .asc parser
-//! Use feature flag to use only a specific feature
+//! The default feature set enables both the `.dbc` database parser and the `.asc`
+//! trace parser. Use Cargo feature flags to pick only the pieces you need.
 //!
 //! ## Highlights
 //! - DBC parser: loads CAN databases from `.dbc` into a SlotMap-backed
@@ -14,12 +14,17 @@
 //!   only the index of the most recent frame and formats absolute timestamps
 //!   with a lightweight formatter.
 //!
-//! Docs updated: 8 October 2025
+//! Docs updated: 2025-10-09 — refreshed documentation for parser behaviour and feature flags.
 //!
 #[cfg(feature = "asc")]
 pub mod asc;
 #[cfg(feature = "dbc")]
 pub mod dbc;
+
+#[cfg(feature = "asc")]
+pub use crate::asc::types::errors::AscParseError;
+#[cfg(feature = "dbc")]
+pub use crate::dbc::types::errors::{DatabaseError, DbcParseError, MessageLayoutError};
 
 // Helper re-export for UI convenience (only when `asc` is enabled)
 #[cfg(feature = "asc")]

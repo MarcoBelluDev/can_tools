@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader};
 
 use crate::asc::core;
 use crate::asc::types::canlog::CanLog;
+use crate::asc::types::errors::AscParseError;
 use crate::dbc::types::database::DatabaseDBC;
 
 /// Parses a Vector ASCII trace (`.asc`) file and builds a `CanLog`.
@@ -29,16 +30,19 @@ use crate::dbc::types::database::DatabaseDBC;
 ///   before calling `DatabaseDBC::get_message_by_id_hex`.
 ///
 /// # Returns
-/// - `Ok(CanLog)` on success, where:
-/// - `all_frame` contains **all** parsed frames, in file order;
-/// - `last_id_chn_frame` contains **one** frame per `(numeric id, channel)`—the one
-///   with the greatest `timestamp`;
-/// - `absolute_time` (in `CanLog`) is set if a `date` header was found, otherwise left at default.
-/// - `Err(String)` if the extension is not `.asc` or if the file cannot be opened.
+/// - `Ok(CanLog)` on success:
+///   - `can_frames` contains every parsed frame in file order;
+///   - `last_id_chn_frame` stores exactly one frame index per `(numeric id, channel)` pair,
+///     always pointing at the most recent timestamp;
+///   - `messages` mirrors `can_frames` length one-to-one with decoded metadata;
+///   - `signals` aggregates per-signal time-series updated as frames are decoded;
+///   - `absolute_time` (inside `CanLog`) is populated only when a `date` header is found.
+/// - `Err(AscParseError)` if the extension is not `.asc`, the file cannot be opened, or I/O errors occur.
 ///
 /// # Errors
-/// - Returns `Err("Not a valid .asc file format")` if `path` does not end with `.asc`.
-/// - Returns `Err("Error while opening .asc file: ...")` on I/O errors.
+/// - Returns `Err(AscParseError::InvalidExtension)` if `path` does not end with `.asc`.
+/// - Returns `Err(AscParseError::OpenFile)` on failure to open.
+/// - Returns `Err(AscParseError::Read)` on I/O errors while reading.
 ///
 /// # Behavior & Invariants
 /// - Only the **first** valid `date` header is used; subsequent lines are treated as data.
@@ -57,10 +61,12 @@ use crate::dbc::types::database::DatabaseDBC;
 /// # Notes
 /// - Lines are streamed with `BufRead::lines()`. Non-frame lines are ignored unless
 ///   they match the `date` header format handled by `abs_time::from_line`.
-pub fn from_file(path: &str, db_list: &HashMap<u8, DatabaseDBC>) -> Result<CanLog, String> {
+pub fn from_file(path: &str, db_list: &HashMap<u8, DatabaseDBC>) -> Result<CanLog, AscParseError> {
     // check if provided file has .asc format
     if !path.ends_with(".asc") {
-        return Err("Not a valid .asc file format".to_string());
+        return Err(AscParseError::InvalidExtension {
+            path: path.to_string(),
+        });
     }
 
     // initialize canlog and all the helper needed for its internal fields
@@ -71,15 +77,23 @@ pub fn from_file(path: &str, db_list: &HashMap<u8, DatabaseDBC>) -> Result<CanLo
     let mut chart_by_key: HashMap<String, usize> = HashMap::new();
     let mut found_abs_time: bool = false;
 
+    let path_owned: String = path.to_string();
     let reader: BufReader<File> = match File::open(path) {
         Ok(file) => BufReader::new(file),
-        Err(e) => {
-            return Err(format! {"Error while opening .asc file: {}", e});
+        Err(source) => {
+            return Err(AscParseError::OpenFile {
+                path: path_owned.clone(),
+                source,
+            });
         }
     };
 
     // read .asc file line by line
-    for line in reader.lines().map_while(Result::ok) {
+    for line in reader.lines() {
+        let line = line.map_err(|source| AscParseError::Read {
+            path: path_owned.clone(),
+            source,
+        })?;
         if !found_abs_time && let Some(time) = core::abs_time::from_line(&line) {
             log.absolute_time = time;
             found_abs_time = true;

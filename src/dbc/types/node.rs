@@ -9,13 +9,13 @@ use std::collections::BTreeMap;
 pub struct NodeDBC {
     /// Node/ECU name.
     pub name: String,
-    /// Associated comment
+    /// Associated comment.
     pub comment: String,
     /// Messages transmitted by this node.
     pub messages_sent: Vec<MessageKey>,
-    /// Signals read by this node
+    /// Signals this node transmits (aggregated from the messages it sends).
     pub tx_signals: Vec<SignalKey>,
-    /// Signals read by this node
+    /// Signals this node receives.
     pub rx_signals: Vec<SignalKey>,
 
     // --- Attributes ---
@@ -24,7 +24,6 @@ pub struct NodeDBC {
 
 impl NodeDBC {
     /// Resets all fields to their default values.
-    /// Clear the database
     pub fn clear(&mut self) {
         *self = NodeDBC::default();
     }

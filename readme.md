@@ -5,10 +5,22 @@ Rust utilities for parsing and modeling automotive CAN databases and logs.
 
 ---
 
-## Features
+## Highlights
 
-- DBC parsing → build an in-memory `DatabaseDBC` (nodes, messages, signals).
-- ASC parsing → parse Vector ASCII traces into a `CanLog` model.
+- DBC parsing → streaming reader that decodes Windows-1252, transliterates a few common characters,
+  and materialises a SlotMap-backed `DatabaseDBC` (nodes, messages, signals, attributes, relations).
+- ASC parsing → single-pass Vector ASCII reader that discovers optional `date` headers, formats
+  absolute timestamps, keeps every frame in `can_frames`, and tracks one latest frame per `(id, channel)`
+  in `last_id_chn_frame`.
+
+## Feature Flags
+
+The crate enables both parsers by default. Use Cargo features to opt out:
+
+| Feature | Enabled by default? | Description |
+|---------|---------------------|-------------|
+| `dbc`   | ✅                  | DBC database parser and models (brings `encoding_rs`, `slotmap`). |
+| `asc`   | ✅                  | Vector ASCII trace parser and models (depends on `dbc`, adds `chrono`). |
 
 This README documents the library API (no application/UI specifics).
 
@@ -20,14 +32,14 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-can_tools = "1.3.4"
+can_tools = "1.3.5"
 ```
 
 Use only the DBC parser (disable default features):
 
 ```toml
 [dependencies]
-can_tools = { version = "1.3.4", default-features = false, features = ["dbc"] }
+can_tools = { version = "1.3.5", default-features = false, features = ["dbc"] }
 ```
 
 Minimal usage with DBC only:
@@ -119,6 +131,13 @@ let mut dbs: HashMap<u8, DatabaseDBC> = HashMap::new();
 dbs.insert(1, dbc::parse::from_file("network.dbc")?);
 
 let log: CanLog = asc::parse::from_file("trace.asc", &dbs)?;
+
+// `CanLog` contains:
+// - `can_frames`: every frame in file order;
+// - `messages`: one entry per frame with enriched metadata;
+// - `signals`: aggregated decoded signals updated as frames arrive;
+// - `last_id_chn_frame`: one index per `(id, channel)` pointing to the freshest frame;
+// - `absolute_time`: optional trace start timestamp derived from the `date` header.
 
 // Iterate all frames in file order and access their messages
 for frame in &log.can_frames {

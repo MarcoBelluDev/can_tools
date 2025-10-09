@@ -6,7 +6,7 @@ pub struct CanFrame {
     /// otherwise derived by the parser.
     pub absolute_time: String,
 
-    /// Relative timestamp as it appeared in the log (e.g. `"0.016728"`).
+    /// Relative timestamp in seconds since trace start (parsed from the textual token).
     pub timestamp: f32,
 
     /// Logger channel index (typically 1-based).

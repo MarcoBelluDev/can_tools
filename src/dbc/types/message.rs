@@ -22,7 +22,7 @@ pub struct MessageDBC {
     pub name: String,
     /// Payload length in bytes.
     pub byte_length: u16,
-    /// Message type (free-form; if present in the DBC).
+    /// Message type string (free-form from the DBC, defaults to `"CAN"` / `"CAN FD"` based on payload length).
     pub msgtype: String,
     /// Transmitting nodes (ECUs) for this message.
     pub sender_nodes: Vec<NodeKey>,
@@ -110,9 +110,9 @@ pub struct MuxInfo {
     pub role: MuxRole,
     /// Optional group index (extended multiplexing). `0` if unused.
     pub group: u8,
-    /// For `Dependent` signals, the switch controlling it. `None` otherwise.
+    /// For multiplexed signals, the switch controlling them. `None` otherwise.
     pub switch: Option<SignalKey>,
-    /// For `Dependent` signals, the allowed selectors (values/ranges). Empty otherwise.
+    /// For multiplexed signals, the allowed selectors (values or ranges). Defaults to `Value(0)`.
     pub selector: MuxSelector,
 }
 
