@@ -774,6 +774,39 @@ impl DatabaseDBC {
         Ok(())
     }
 
+    /// Removes a single entry from a signal's value table (if present).
+    pub fn remove_value_table_entry(
+        &mut self,
+        sig_key: SignalKey,
+        entry: i32,
+    ) -> Result<(), DatabaseError> {
+        let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
+            return Err(DatabaseError::SignalMissing {
+                signal_key: sig_key,
+            });
+        };
+
+        signal.value_table.remove(&entry);
+        Ok(())
+    }
+
+    /// Adds or replaces a value table entry for the given signal.
+    pub fn add_value_table_entry(
+        &mut self,
+        sig_key: SignalKey,
+        entry: i32,
+        description: String,
+    ) -> Result<(), DatabaseError> {
+        let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
+            return Err(DatabaseError::SignalMissing {
+                signal_key: sig_key,
+            });
+        };
+
+        signal.value_table.insert(entry, description);
+        Ok(())
+    }
+
     /// Binds a signal to a message, configuring its layout and multiplexing metadata.
     pub fn add_msg_sig_relation(
         &mut self,
