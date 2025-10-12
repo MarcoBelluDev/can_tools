@@ -67,6 +67,12 @@ pub enum DatabaseError {
         signal: String,
         associated_with: String,
     },
+    #[error("Value table entry {entry} already exists for signal '{signal}'")]
+    ValueTableEntryAlreadyExists { signal: String, entry: i32 },
+    #[error("Value table entry {entry} is not defined for signal '{signal}'")]
+    ValueTableEntryMissing { signal: String, entry: i32 },
+    #[error("Value table entry for signal '{signal}' cannot have an empty description")]
+    ValueTableEntryDescriptionEmpty { signal: String },
     #[error("Message missing while updating multiplexor relation.")]
     MessageMissingDuringMultiplexing,
     #[error("Database is in an inconsistent state: {details}")]

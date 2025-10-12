@@ -786,7 +786,13 @@ impl DatabaseDBC {
             });
         };
 
-        signal.value_table.remove(&entry);
+        if signal.value_table.remove(&entry).is_none() {
+            return Err(DatabaseError::ValueTableEntryMissing {
+                signal: signal.name.clone(),
+                entry,
+            });
+        }
+
         Ok(())
     }
 
@@ -795,7 +801,7 @@ impl DatabaseDBC {
         &mut self,
         sig_key: SignalKey,
         entry: i32,
-        description: String,
+        description: &str,
     ) -> Result<(), DatabaseError> {
         let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
             return Err(DatabaseError::SignalMissing {
@@ -803,7 +809,20 @@ impl DatabaseDBC {
             });
         };
 
-        signal.value_table.insert(entry, description);
+        if description.is_empty() {
+            return Err(DatabaseError::ValueTableEntryDescriptionEmpty {
+                signal: signal.name.clone(),
+            });
+        }
+
+        if signal.value_table.contains_key(&entry) {
+            return Err(DatabaseError::ValueTableEntryAlreadyExists {
+                signal: signal.name.clone(),
+                entry,
+            });
+        }
+
+        signal.value_table.insert(entry, description.to_string());
         Ok(())
     }
 
@@ -1056,15 +1075,16 @@ impl DatabaseDBC {
                     }
                     MuxRole::Multiplexed => {
                         if let Some(sw) = mux_info.switch
-                            && let Some(by_sel) = message.mux_cases.get_mut(&sw) {
-                                by_sel.retain(|_, list| {
-                                    list.retain(|&sk| sk != sig_key);
-                                    !list.is_empty()
-                                });
-                                if by_sel.is_empty() {
-                                    message.mux_cases.remove(&sw);
-                                }
+                            && let Some(by_sel) = message.mux_cases.get_mut(&sw)
+                        {
+                            by_sel.retain(|_, list| {
+                                list.retain(|&sk| sk != sig_key);
+                                !list.is_empty()
+                            });
+                            if by_sel.is_empty() {
+                                message.mux_cases.remove(&sw);
                             }
+                        }
                     }
                     MuxRole::None => {}
                 }
