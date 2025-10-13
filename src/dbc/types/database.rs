@@ -789,7 +789,7 @@ impl DatabaseDBC {
         if signal.value_table.remove(&entry).is_none() {
             return Err(DatabaseError::ValueTableEntryMissing {
                 signal: signal.name.clone(),
-                entry,
+                entry: format!("0x{:02X}", entry),
             });
         }
 
@@ -818,7 +818,7 @@ impl DatabaseDBC {
         if signal.value_table.contains_key(&entry) {
             return Err(DatabaseError::ValueTableEntryAlreadyExists {
                 signal: signal.name.clone(),
-                entry,
+                entry: format!("0x{:02X}", entry),
             });
         }
 
