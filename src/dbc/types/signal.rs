@@ -1,7 +1,7 @@
 use crate::dbc::types::{
     attributes::AttributeValue,
-    database::{DatabaseDBC, MessageKey, NodeKey},
-    message::MuxInfo,
+    database::{DatabaseDBC, MessageKey, NodeKey, SignalKey},
+    message::{MuxRole, MuxSelector},
     node::NodeDBC,
 };
 use std::collections::BTreeMap;
@@ -55,8 +55,14 @@ pub struct SignalDBC {
     pub value_table: BTreeMap<i32, String>,
     // Precomputed extraction steps for fast decoding.
     pub(crate) steps: Vec<Step>,
-    /// Multiplexing metadata (None if not multiplexed).
-    pub mux: Option<MuxInfo>,
+    /// Multiplexing role (`MuxRole::None` when unused).
+    pub mux_role: MuxRole,
+    /// Optional group index (extended multiplexing). `0` if unused.
+    pub mux_group: u8,
+    /// For multiplexed signals, the controlling multiplexer switch.
+    pub mux_switch: Option<SignalKey>,
+    /// Selector for the multiplexer switch value/range (meaningful when multiplexed).
+    pub mux_selector: MuxSelector,
 
     // --- Signal Attribute Entry ---
     pub attributes: BTreeMap<String, AttributeValue>,

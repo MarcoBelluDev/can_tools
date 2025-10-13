@@ -103,30 +103,6 @@ impl Default for MuxSelector {
     }
 }
 
-/// Multiplexing metadata attached to a signal.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct MuxInfo {
-    /// Role of this signal in multiplexing.
-    pub role: MuxRole,
-    /// Optional group index (extended multiplexing). `0` if unused.
-    pub group: u8,
-    /// For multiplexed signals, the switch controlling them. `None` otherwise.
-    pub switch: Option<SignalKey>,
-    /// For multiplexed signals, the allowed selectors (values or ranges). Defaults to `Value(0)`.
-    pub selector: MuxSelector,
-}
-
-impl MuxInfo {
-    /// Describes the current multiplexing role as a display-friendly string.
-    pub fn role_to_string(&self) -> String {
-        match self.role {
-            MuxRole::None => "None".to_string(),
-            MuxRole::Multiplexed => "Multiplexed".to_string(),
-            MuxRole::Multiplexor => "Multiplexor".to_string(),
-        }
-    }
-}
-
 /// Message send behavior (as used by some DBC attributes like `GenMsgSendType`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum GenMsgSendType {

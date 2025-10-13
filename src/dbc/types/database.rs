@@ -22,7 +22,7 @@ use crate::dbc::{
     types::{
         attributes::{AttributeSpec, AttributeValue},
         errors::DatabaseError,
-        message::{IdFormat, MessageDBC, MuxInfo, MuxRole, MuxSelector},
+        message::{IdFormat, MessageDBC, MuxRole, MuxSelector},
         node::NodeDBC,
         signal::{Endianness, SignalDBC, Signess},
     },
@@ -527,10 +527,11 @@ impl DatabaseDBC {
             .iter()
             .filter_map(|&old_sk| {
                 let s = self.get_sig_by_key(old_sk)?;
-                let (role, sel) = if let Some(mi) = &s.mux {
-                    (mi.role, Some(mi.selector.clone()))
+                let role = s.mux_role;
+                let sel = if role == MuxRole::Multiplexed {
+                    Some(s.mux_selector.clone())
                 } else {
-                    (MuxRole::None, None)
+                    None
                 };
                 Some((old_sk, role, sel))
             })
@@ -890,16 +891,14 @@ impl DatabaseDBC {
             signal.message = msg_key;
             signal.bit_start = bit_start;
             signal.bit_length = bit_length;
-            signal.mux = if mux_role == MuxRole::None {
-                None
+            signal.mux_role = mux_role;
+            signal.mux_group = 0;
+            signal.mux_switch = if mux_role == MuxRole::Multiplexed {
+                inferred_switch
             } else {
-                Some(MuxInfo {
-                    role: mux_role,
-                    group: 0,
-                    switch: inferred_switch,
-                    selector: mux_selector.clone().unwrap_or_default(),
-                })
+                None
             };
+            signal.mux_selector = mux_selector.clone().unwrap_or_default();
 
             signal.steps.clear();
             signal.compile_inline();
@@ -964,9 +963,8 @@ impl DatabaseDBC {
                         .copied()
                         .filter_map(|sk| {
                             let s: &SignalDBC = self.get_sig_by_key(sk)?;
-                            let mi: &MuxInfo = s.mux.as_ref()?;
-                            if mi.role == MuxRole::Multiplexed && mi.switch.is_none() {
-                                Some((sk, mi.selector.clone()))
+                            if s.mux_role == MuxRole::Multiplexed && s.mux_switch.is_none() {
+                                Some((sk, s.mux_selector.clone()))
                             } else {
                                 None
                             }
@@ -978,11 +976,10 @@ impl DatabaseDBC {
                 for (sk, sel) in dep_to_attach {
                     // set the Multiplexor to the signal
                     if let Some(s) = self.get_sig_by_key_mut(sk)
-                        && let Some(mi) = s.mux.as_mut()
-                        && mi.role == MuxRole::Multiplexed
-                        && mi.switch.is_none()
+                        && s.mux_role == MuxRole::Multiplexed
+                        && s.mux_switch.is_none()
                     {
-                        mi.switch = Some(sig_key);
+                        s.mux_switch = Some(sig_key);
                     }
 
                     // Update the map of the message
@@ -1020,7 +1017,7 @@ impl DatabaseDBC {
             })?;
 
         // Snapshot the signal state and verify that it is bound to the target message.
-        let mux_snapshot: Option<MuxInfo> = {
+        let mux_snapshot: Option<(MuxRole, Option<SignalKey>, MuxSelector)> = {
             let signal = self
                 .get_sig_by_key(sig_key)
                 .ok_or(DatabaseError::SignalMissing {
@@ -1043,7 +1040,12 @@ impl DatabaseDBC {
                     associated_with,
                 });
             }
-            signal.mux.clone()
+            let role = signal.mux_role;
+            if role == MuxRole::None {
+                None
+            } else {
+                Some((role, signal.mux_switch, signal.mux_selector.clone()))
+            }
         };
 
         let mut multiplexed_to_detach: Vec<SignalKey> = Vec::new();
@@ -1063,8 +1065,8 @@ impl DatabaseDBC {
                 });
             }
 
-            if let Some(mux_info) = &mux_snapshot {
-                match mux_info.role {
+            if let Some((role, switch, _selector)) = &mux_snapshot {
+                match role {
                     MuxRole::Multiplexor => {
                         message.mux_multiplexors.retain(|&mk| mk != sig_key);
                         if let Some(by_sel) = message.mux_cases.remove(&sig_key) {
@@ -1074,7 +1076,7 @@ impl DatabaseDBC {
                         }
                     }
                     MuxRole::Multiplexed => {
-                        if let Some(sw) = mux_info.switch
+                        if let Some(sw) = *switch
                             && let Some(by_sel) = message.mux_cases.get_mut(&sw)
                         {
                             by_sel.retain(|_, list| {
@@ -1094,17 +1096,19 @@ impl DatabaseDBC {
         // Clear multiplexing switch references on dependents that previously pointed at this signal.
         for dep in multiplexed_to_detach {
             if let Some(sig) = self.get_sig_by_key_mut(dep)
-                && let Some(mi) = sig.mux.as_mut()
-                && mi.role == MuxRole::Multiplexed
+                && sig.mux_role == MuxRole::Multiplexed
             {
-                mi.switch = None;
+                sig.mux_switch = None;
             }
         }
 
         // Reset the detached signal metadata.
         if let Some(signal) = self.get_sig_by_key_mut(sig_key) {
             signal.message = MessageKey::default();
-            signal.mux = None;
+            signal.mux_role = MuxRole::None;
+            signal.mux_group = 0;
+            signal.mux_switch = None;
+            signal.mux_selector = MuxSelector::default();
         }
 
         // Remove the signal from every sender node's transmitted list.
@@ -1216,6 +1220,13 @@ impl DatabaseDBC {
         }
 
         Ok(new_sig_key)
+    }
+
+    /// Returns `true` if the signal exists and is bound to a message.
+    pub fn signal_has_message(&self, signal_key: SignalKey) -> bool {
+        self.get_sig_by_key(signal_key)
+            .map(|sig| !sig.message.is_null())
+            .unwrap_or(false)
     }
 
     /// Looks up the `SignalKey` for a case-insensitive signal name.
