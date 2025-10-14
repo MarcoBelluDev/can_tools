@@ -12,6 +12,8 @@ Rust utilities for parsing and modeling automotive CAN databases and logs.
 - ASC parsing → single-pass Vector ASCII reader that discovers optional `date` headers, formats
   absolute timestamps, keeps every frame in `can_frames`, and tracks one latest frame per `(id, channel)`
   in `last_id_chn_frame`.
+- Programmatic authoring → build an empty `DatabaseDBC` with `dbc::create::new_database` and export it
+  back to disk via `dbc::save::save_to_file`.
 
 ## Feature Flags
 
@@ -32,14 +34,14 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-can_tools = "1.4.1"
+can_tools = "1.4.2"
 ```
 
 Use only the DBC parser (disable default features):
 
 ```toml
 [dependencies]
-can_tools = { version = "1.4.1", default-features = false, features = ["dbc"] }
+can_tools = { version = "1.4.2", default-features = false, features = ["dbc"] }
 ```
 
 Minimal usage with DBC only:
@@ -117,6 +119,33 @@ Notes on attributes:
 - Attribute definitions come from `BA_DEF_*` and defaults from `BA_DEF_DEF_`.
 - Assignments `BA_` set values on DB/Node/Message/Signal.
 - ENUM assignments in `BA_` use numeric indices into the declared enum list.
+
+### Create and Save a DBC
+
+```rust
+use can_tools::dbc::{
+    create::new_database,
+    save::save_to_file,
+    types::database::BusType,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Scaffold a fresh database with canonical metadata defaults.
+    let mut db = new_database("ExampleNetwork", BusType::CanFd, "1.0.0")?;
+
+    // TODO: add nodes/messages/signals here...
+
+    // Persist the database to disk. The path must end with ".dbc".
+    save_to_file("artifacts/example_network.dbc", db)?;
+    Ok(())
+}
+```
+
+`new_database` validates that both `name` and `version` are non-empty and
+pre-populates common attribute definitions such as baud rates, date stamp,
+and manufacturer placeholders. `save_to_file` creates parent directories on
+the fly, serialises every section (NS_, BA_DEF_*, BA_, CM_, VAL_, etc.), and
+returns a `DbcSaveError` variant when the path or write fails.
 
 ### Parse an ASC trace
 

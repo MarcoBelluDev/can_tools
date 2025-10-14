@@ -20,10 +20,42 @@ pub enum DbcParseError {
         #[source]
         source: io::Error,
     },
+}
+
+/// Errors produced while creating a new empty `.dbc` file.
+#[derive(Debug, Error)]
+pub enum DbcCreateError {
     #[error("Database name cannot be empty")]
     EmptyDatabaseName,
     #[error("Database version cannot be empty")]
     EmptyDatabaseVersion,
+}
+
+/// Errors produced while saving DatabaseDBC into a  `.dbc` file.
+#[derive(Debug, Error)]
+pub enum DbcSaveError {
+    #[error("Output path must end in .dbc: {path}")]
+    InvalidExtension { path: String },
+    #[error("Failed to create '{path}'. \nError: {source}")]
+    CreateFile {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Failed to create directories for '{path}'. \nError: {source}")]
+    CreateDirectory {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Failed while writing '{path}'. \nError: {source}")]
+    Write {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Failed to format DBC content")]
+    Format,
 }
 
 /// Errors produced while verifying that a signal fits a CAN frame layout.
