@@ -20,6 +20,10 @@ pub enum DbcParseError {
         #[source]
         source: io::Error,
     },
+    #[error("Database name cannot be empty")]
+    EmptyDatabaseName,
+    #[error("Database version cannot be empty")]
+    EmptyDatabaseVersion,
 }
 
 /// Errors produced while verifying that a signal fits a CAN frame layout.

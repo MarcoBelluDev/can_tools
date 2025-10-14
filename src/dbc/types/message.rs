@@ -32,7 +32,7 @@ pub struct MessageDBC {
     pub signals: Vec<SignalKey>,
     /// Associated comment (DBC `CM_ BO_` section).
     pub comment: String,
-    /// List of multiplexer switch signals (primary first). Empty if none.
+    /// List of multiplexor switch signals (primary first). Empty if none.
     pub mux_multiplexors: Vec<SignalKey>,
 
     // --- Message Attribute Entry ---

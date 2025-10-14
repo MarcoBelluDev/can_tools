@@ -45,7 +45,6 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     if attr_name == "DBName" {
         db.name = value.to_string();
-        return;
     }
 
     if attr_name == "BusType" {
@@ -53,7 +52,6 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             "CAN FD" => BusType::CanFd,
             _ => BusType::Can,
         };
-        return;
     }
 
     if let Some(attr_spec) = db.db_attr_spec.get_mut(attr_name)
