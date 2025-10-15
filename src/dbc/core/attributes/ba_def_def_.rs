@@ -191,13 +191,13 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             }
         };
 
-        // if a default value was found, insert it in the AttributeSpec and update all Nodes with the attribute
+        // if a default value was found, insert it in the AttributeSpec and update all Signals with the attribute
         if let Some(default_value) = parsed_default {
             if let Some(spec) = db.sig_attr_spec.get_mut(name) {
                 spec.default = Some(default_value.clone());
             }
 
-            db.for_each_node_mut(|signal| {
+            db.for_each_signal_mut(|signal| {
                 signal
                     .attributes
                     .insert(name.to_string(), default_value.clone());

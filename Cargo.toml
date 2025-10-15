@@ -1,6 +1,6 @@
 [package]
 name = "can_tools"
-version = "1.4.2"
+version = "1.4.3"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
 description = "Mix of useful tools for CAN bus"
@@ -29,4 +29,4 @@ chrono = "0.4.41"
 encoding_rs = { version = "0.8.35", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 slotmap = { version = "1.0.7", optional = true }
-thiserror = "1.0.69"
+thiserror = "2.0.17"

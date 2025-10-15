@@ -2,9 +2,10 @@ use slotmap::Key;
 use std::collections::BTreeMap;
 use std::fmt::{self, Write as FmtWrite};
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
+use crate::dbc::types::signal::SignalDBC;
 use crate::dbc::types::{
     attributes::{AttrType, AttributeDef, AttributeSpec, AttributeValue},
     database::DatabaseDBC,
@@ -43,6 +44,10 @@ const NS_KEYWORDS: &[&str] = &[
     "BU_BO_REL_",
 ];
 
+const AUTONET_FAKE_NODE: &str = "AutoNet_XXX";
+const AUTONET_FAKE_MSG_NAME: &str = "AUTONET__INDEPENDENT_SIG_MSG";
+const AUTONET_FAKE_MSG_ID: u32 = 3_221_225_479;
+
 /// Serializes a `DatabaseDBC` into DBC text and writes it to `path`.
 ///
 /// Ensures the destination has a `.dbc` extension, creates intermediate
@@ -54,8 +59,6 @@ pub fn save_to_file(path: &str, database: &DatabaseDBC) -> Result<(), DbcSaveErr
             path: path.to_string(),
         });
     }
-
-    let serialized: String = serialize_database(database)?;
 
     let path_ref: &Path = Path::new(path);
     if let Some(parent) = path_ref.parent()
@@ -72,12 +75,10 @@ pub fn save_to_file(path: &str, database: &DatabaseDBC) -> Result<(), DbcSaveErr
         source,
     })?;
     let mut writer = BufWriter::new(file);
-    writer
-        .write_all(serialized.as_bytes())
-        .map_err(|source| DbcSaveError::Write {
-            path: path.to_string(),
-            source,
-        })?;
+    serialize_database(database, &mut writer).map_err(|source| DbcSaveError::Write {
+        path: path.to_string(),
+        source,
+    })?;
     writer.flush().map_err(|source| DbcSaveError::Write {
         path: path.to_string(),
         source,
@@ -85,62 +86,62 @@ pub fn save_to_file(path: &str, database: &DatabaseDBC) -> Result<(), DbcSaveErr
     Ok(())
 }
 
-fn serialize_database(db: &DatabaseDBC) -> Result<String, DbcSaveError> {
-    let mut out = String::new();
-
+// Serializes the database into raw DBC text using the provided writer.
+fn serialize_database<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     let version = escape_dbc_string(&db.version);
-    write_fmt(&mut out, format_args!("VERSION \"{}\"\n\n", version))?;
+    write_fmt(out, format_args!("VERSION \"{}\"\n\n", version))?;
 
-    out.push_str("NS_ :\n");
+    write_fmt(out, format_args!("NS_ :\n"))?;
     for keyword in NS_KEYWORDS {
-        out.push('\t');
-        out.push_str(keyword);
-        out.push('\n');
+        write_fmt(out, format_args!("\t{}\n", keyword))?;
     }
-    out.push('\n');
+    write_fmt(out, format_args!("\n"))?;
 
-    out.push_str("BS_:\n\n");
+    write_fmt(out, format_args!("BS_:\n\n"))?;
 
-    out.push_str("BU_:");
+    write_fmt(out, format_args!("BU_:"))?;
     for node in db.iter_nodes() {
-        out.push(' ');
-        out.push_str(&node.name);
+        write_fmt(out, format_args!(" {}", node.name))?;
     }
-    out.push('\n');
-    out.push('\n');
+    write_fmt(out, format_args!("\n\n"))?;
 
-    write_messages(db, &mut out)?;
-    out.push('\n');
+    let independent: Vec<SignalDBC> = collect_independent_signals(db);
+    write_independent_signals_as_fake_message(db, &independent, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_bo_tx_bu(db, &mut out)?;
-    out.push('\n');
+    write_messages(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_attribute_definitions(db, &mut out)?;
-    out.push('\n');
+    write_bo_tx_bu(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_relation_attribute_definitions(db, &mut out)?;
-    out.push('\n');
+    write_comments(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_attribute_defaults(db, &mut out)?;
-    write_relation_attribute_defaults(db, &mut out)?;
-    out.push('\n');
+    write_attribute_definitions(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_attribute_assignments(db, &mut out)?;
-    out.push('\n');
+    write_relation_attribute_definitions(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_relation_attribute_assignments(db, &mut out)?;
-    out.push('\n');
+    write_attribute_defaults(db, out)?;
+    write_relation_attribute_defaults(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_comments(db, &mut out)?;
-    out.push('\n');
+    write_attribute_assignments(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    write_sig_valtype(db, &mut out)?;
-    write_value_tables(db, &mut out)?;
+    write_relation_attribute_assignments(db, out)?;
+    write_fmt(out, format_args!("\n"))?;
 
-    Ok(out)
+    write_sig_valtype(db, out)?;
+    write_value_tables(db, out)?;
+
+    Ok(())
 }
 
-fn write_messages(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Writes each message and its signals into standard DBC syntax.
+fn write_messages<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         let transmitter = message
             .sender_nodes
@@ -205,20 +206,22 @@ fn write_messages(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError
             }
         }
 
-        out.push('\n');
+        write_fmt(out, format_args!("\n"))?;
     }
 
     Ok(())
 }
 
-fn write_bo_tx_bu(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Emits BO_TX_BU entries describing message transmitters.
+fn write_bo_tx_bu<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         let mut transmitters: Vec<String> = Vec::new();
         for nk in &message.sender_nodes {
             if let Some(node) = db.get_node_by_key(*nk)
-                && !transmitters.iter().any(|name| name == &node.name) {
-                    transmitters.push(node.name.clone());
-                }
+                && !transmitters.iter().any(|name| name == &node.name)
+            {
+                transmitters.push(node.name.clone());
+            }
         }
 
         if transmitters.is_empty() {
@@ -234,7 +237,8 @@ fn write_bo_tx_bu(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError
     Ok(())
 }
 
-fn write_attribute_definitions(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Outputs attribute definitions for database, node, message, and signal scopes.
+fn write_attribute_definitions<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for (name, spec) in &db.db_attr_spec {
         if let Some(def) = spec.def.as_ref() {
             let signature = format_attribute_def(def);
@@ -275,10 +279,8 @@ fn write_attribute_definitions(db: &DatabaseDBC, out: &mut String) -> Result<(),
     Ok(())
 }
 
-fn write_relation_attribute_definitions(
-    db: &DatabaseDBC,
-    out: &mut String,
-) -> Result<(), DbcSaveError> {
+// Outputs attribute definitions for relation-scoped attributes.
+fn write_relation_attribute_definitions<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for (name, spec) in &db.rel_attr_spec_bu_sg {
         if let Some(def) = spec.def.as_ref() {
             let signature = format_attribute_def(def);
@@ -302,7 +304,8 @@ fn write_relation_attribute_definitions(
     Ok(())
 }
 
-fn write_attribute_defaults(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Writes the default values for each scoped attribute.
+fn write_attribute_defaults<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     let mut defaults: BTreeMap<String, AttributeValue> = BTreeMap::new();
 
     collect_defaults(&db.db_attr_spec, &mut defaults);
@@ -322,10 +325,8 @@ fn write_attribute_defaults(db: &DatabaseDBC, out: &mut String) -> Result<(), Db
     Ok(())
 }
 
-fn write_relation_attribute_defaults(
-    db: &DatabaseDBC,
-    out: &mut String,
-) -> Result<(), DbcSaveError> {
+// Writes default values for relation-scoped attributes.
+fn write_relation_attribute_defaults<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     let mut defaults: BTreeMap<String, AttributeValue> = BTreeMap::new();
 
     collect_defaults(&db.rel_attr_spec_bu_sg, &mut defaults);
@@ -346,7 +347,8 @@ fn write_relation_attribute_defaults(
     Ok(())
 }
 
-fn write_attribute_assignments(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Emits attribute assignments for databases, nodes, messages, and signals.
+fn write_attribute_assignments<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for (name, value) in &db.attributes {
         let spec = db.db_attr_spec.get(name);
         let value_str = format_attribute_value(value, spec);
@@ -396,10 +398,8 @@ fn write_attribute_assignments(db: &DatabaseDBC, out: &mut String) -> Result<(),
     Ok(())
 }
 
-fn write_relation_attribute_assignments(
-    db: &DatabaseDBC,
-    out: &mut String,
-) -> Result<(), DbcSaveError> {
+// Emits BA_REL statements for relation-scoped attribute assignments.
+fn write_relation_attribute_assignments<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     let mut bu_sg_entries: Vec<(String, u32, String, &BTreeMap<String, AttributeValue>)> =
         Vec::new();
     for ((node_key, sig_key), attrs) in &db.bu_sg_rel_attributes {
@@ -465,7 +465,8 @@ fn write_relation_attribute_assignments(
     Ok(())
 }
 
-fn write_comments(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Writes CM_ comment blocks for database items.
+fn write_comments<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     if !db.comment.is_empty() {
         let comment = escape_dbc_string(&db.comment);
         write_fmt(out, format_args!("CM_ \"{}\";\n", comment))?;
@@ -510,7 +511,8 @@ fn write_comments(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError
     Ok(())
 }
 
-fn write_sig_valtype(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Emits SIG_VALTYPE_ lines for floating-point signals.
+fn write_sig_valtype<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         for sig_key in &message.signals {
             if let Some(signal) = db.get_sig_by_key(*sig_key) {
@@ -532,7 +534,8 @@ fn write_sig_valtype(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveEr
     Ok(())
 }
 
-fn write_value_tables(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveError> {
+// Outputs VAL_ tables for enumerated signal values.
+fn write_value_tables<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         for sig_key in &message.signals {
             if let Some(signal) = db.get_sig_by_key(*sig_key)
@@ -543,7 +546,7 @@ fn write_value_tables(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveE
                     let desc = escape_dbc_string(description);
                     write_fmt(out, format_args!(" {} \"{}\"", value, desc))?;
                 }
-                out.push_str(" ;\n");
+                write_fmt(out, format_args!(" ;\n"))?;
             }
         }
     }
@@ -551,6 +554,7 @@ fn write_value_tables(db: &DatabaseDBC, out: &mut String) -> Result<(), DbcSaveE
     Ok(())
 }
 
+// Produces the multiplexing tag used in SG_ lines.
 fn format_mux_tag(signal: &crate::dbc::types::signal::SignalDBC) -> String {
     match signal.mux_role {
         MuxRole::Multiplexor => " M".to_string(),
@@ -562,6 +566,7 @@ fn format_mux_tag(signal: &crate::dbc::types::signal::SignalDBC) -> String {
     }
 }
 
+// Converts an attribute definition into its signature text.
 fn format_attribute_def(def: &AttributeDef) -> String {
     match def.kind {
         AttrType::String => "STRING".to_string(),
@@ -592,6 +597,7 @@ fn format_attribute_def(def: &AttributeDef) -> String {
     }
 }
 
+// Formats an attribute value using optional spec information.
 fn format_attribute_value(value: &AttributeValue, spec: Option<&AttributeSpec>) -> String {
     match value {
         AttributeValue::Str(s) => format!("\"{}\"", escape_dbc_string(s)),
@@ -602,14 +608,16 @@ fn format_attribute_value(value: &AttributeValue, spec: Option<&AttributeSpec>) 
             if let Some(spec) = spec
                 .and_then(|s| s.def.as_ref())
                 .filter(|def| matches!(def.kind, AttrType::Enum))
-                && let Some(idx) = spec.enum_values.iter().position(|entry| entry == selected) {
-                    return idx.to_string();
-                }
+                && let Some(idx) = spec.enum_values.iter().position(|entry| entry == selected)
+            {
+                return idx.to_string();
+            }
             format!("\"{}\"", escape_dbc_string(selected))
         }
     }
 }
 
+// Formats floating-point values while stripping redundant trailing zeros.
 fn format_f64(value: f64) -> String {
     if value.fract() == 0.0 {
         format!("{:.0}", value)
@@ -625,6 +633,7 @@ fn format_f64(value: f64) -> String {
     }
 }
 
+// Escapes characters so they are safe inside DBC quoted strings.
 fn escape_dbc_string(input: &str) -> String {
     let mut escaped = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -640,6 +649,7 @@ fn escape_dbc_string(input: &str) -> String {
     escaped
 }
 
+// Collects default attribute values across scopes into a single map.
 fn collect_defaults(
     source: &BTreeMap<String, AttributeSpec>,
     target: &mut BTreeMap<String, AttributeValue>,
@@ -651,6 +661,7 @@ fn collect_defaults(
     }
 }
 
+// Looks up an attribute specification regardless of its scope.
 fn lookup_attr_spec<'a>(db: &'a DatabaseDBC, name: &str) -> Option<&'a AttributeSpec> {
     db.db_attr_spec
         .get(name)
@@ -659,6 +670,110 @@ fn lookup_attr_spec<'a>(db: &'a DatabaseDBC, name: &str) -> Option<&'a Attribute
         .or_else(|| db.sig_attr_spec.get(name))
 }
 
-fn write_fmt(out: &mut String, args: fmt::Arguments<'_>) -> Result<(), DbcSaveError> {
-    out.write_fmt(args).map_err(|_| DbcSaveError::Format)
+// Writes formatted arguments to the writer while preserving io::Error details.
+struct IoWriteAdapter<'a, W: Write> {
+    inner: &'a mut W,
+    error: Option<io::Error>,
+}
+
+impl<'a, W: Write> FmtWrite for IoWriteAdapter<'a, W> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        if let Err(err) = self.inner.write_all(s.as_bytes()) {
+            self.error = Some(err);
+            return Err(fmt::Error);
+        }
+        Ok(())
+    }
+}
+
+fn write_fmt<W: Write>(out: &mut W, args: fmt::Arguments<'_>) -> io::Result<()> {
+    let mut adapter = IoWriteAdapter {
+        inner: out,
+        error: None,
+    };
+    match fmt::write(&mut adapter, args) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(adapter
+            .error
+            .unwrap_or_else(|| io::Error::other("formatting error"))),
+    }
+}
+
+// Filters out signals that are not assigned to a message.
+fn collect_independent_signals(db: &DatabaseDBC) -> Vec<SignalDBC> {
+    db.iter_signals()
+        .filter(|s| s.message.is_null())
+        .cloned()
+        .collect()
+}
+
+// Synthesizes a fake message containing independent signals for export.
+fn write_independent_signals_as_fake_message<W: Write>(
+    db: &DatabaseDBC,
+    orphans: &[SignalDBC],
+    out: &mut W,
+) -> io::Result<()> {
+    if orphans.is_empty() {
+        return Ok(());
+    }
+
+    write_fmt(
+        out,
+        format_args!(
+            "BO_ {} {}: {} {}\n",
+            AUTONET_FAKE_MSG_ID, AUTONET_FAKE_MSG_NAME, 0, AUTONET_FAKE_NODE
+        ),
+    )?;
+
+    for signal in orphans {
+        let mux_tag: String = format_mux_tag(signal);
+        let endian: char = if matches!(signal.endian, Endianness::Intel) {
+            '1'
+        } else {
+            '0'
+        };
+        let sign_char: char = match signal.sign {
+            Signess::Signed => '-',
+            _ => '+',
+        };
+        let factor: String = format_f64(signal.factor);
+        let offset: String = format_f64(signal.offset);
+        let min: String = format_f64(signal.min);
+        let max: String = format_f64(signal.max);
+        let unit: String = escape_dbc_string(&signal.unit_of_measurement);
+
+        // Receiver: use existing Node receivers, otherwise use AutoNet_XXX
+        let receivers: Vec<String> = signal
+            .receiver_nodes
+            .iter()
+            .filter_map(|nk| db.get_node_by_key(*nk).map(|n| n.name.clone()))
+            .collect();
+        let receivers_field = if receivers.is_empty() {
+            AUTONET_FAKE_NODE.to_string()
+        } else {
+            receivers.join(",")
+        };
+
+        write_fmt(
+            out,
+            format_args!(
+                "\tSG_ {}{} : {}|{}@{}{} ({},{}) [{}|{}] \"{}\"  {}\n",
+                signal.name,
+                mux_tag,
+                signal.bit_start,
+                signal.bit_length,
+                endian,
+                sign_char,
+                factor,
+                offset,
+                min,
+                max,
+                unit,
+                receivers_field
+            ),
+        )?;
+    }
+
+    write_fmt(out, format_args!("\n"))?;
+    Ok(())
 }

@@ -34,14 +34,14 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-can_tools = "1.4.2"
+can_tools = "1.4.3"
 ```
 
 Use only the DBC parser (disable default features):
 
 ```toml
 [dependencies]
-can_tools = { version = "1.4.2", default-features = false, features = ["dbc"] }
+can_tools = { version = "1.4.3", default-features = false, features = ["dbc"] }
 ```
 
 Minimal usage with DBC only:

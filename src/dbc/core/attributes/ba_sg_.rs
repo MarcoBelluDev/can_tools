@@ -56,7 +56,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
 
     // immutable borrow to Attribute Specification
-    let attr_spec: &AttributeSpec = match db.node_attr_spec.get(attr_name) {
+    let attr_spec: &AttributeSpec = match db.sig_attr_spec.get(attr_name) {
         Some(spec) => spec,
         None => return, // exit immediately
     };
