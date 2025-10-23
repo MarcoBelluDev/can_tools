@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeDef, AttributeSpec, AttributeValue},
+    attributes::{AttrType, AttributeSpec, AttributeValue},
     database::DatabaseDBC,
 };
 
@@ -48,20 +48,16 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
 
     // immutable borrow to Attribute Specification
-    let attr_spec: &AttributeSpec = match db.node_attr_spec.get(attr_name) {
+    let attr_spec: &AttributeSpec = match db.attr_spec.get(attr_name) {
         Some(spec) => spec,
         None => return, // exit immediately
     };
 
     // immutable borrow to Attribute Definition
-    let attr_def: &AttributeDef = match attr_spec.def.as_ref() {
-        Some(d) => d,
-        None => return,
-    };
 
     // check the type from the Attribute Definition
     // if value is not found, use default value from Attribute Specification
-    let attr_value: AttributeValue = match attr_def.kind {
+    let attr_value: AttributeValue = match attr_spec.kind {
         AttrType::String => AttributeValue::Str(value.to_string()),
         AttrType::Int => {
             let Ok(num) = value.parse::<i64>() else {
@@ -86,7 +82,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             let Ok(idx) = value.parse::<usize>() else {
                 return;
             };
-            let Some(v) = attr_def.enum_values.get(idx) else {
+            let Some(v) = attr_spec.enum_values.get(idx) else {
                 return;
             };
             AttributeValue::Enum(v.clone())

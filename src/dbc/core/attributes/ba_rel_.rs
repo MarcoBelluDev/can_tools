@@ -71,16 +71,12 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             };
 
             // Resolve spec and parse value
-            let attr_def = match db
-                .rel_attr_spec_bu_sg
-                .get(attr_name)
-                .and_then(|s| s.def.as_ref())
-            {
+            let spec = match db.rel_attr_spec_bu_sg.get(attr_name) {
                 Some(d) => d,
                 None => return,
             };
 
-            let attr_value: AttributeValue = match attr_def.kind {
+            let attr_value: AttributeValue = match spec.kind {
                 AttrType::String => AttributeValue::Str(value.to_string()),
                 AttrType::Int => match value.parse::<i64>() {
                     Ok(v) => AttributeValue::Int(v),
@@ -98,7 +94,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                     let Ok(idx) = value.parse::<usize>() else {
                         return;
                     };
-                    let Some(v) = attr_def.enum_values.get(idx) else {
+                    let Some(v) = spec.enum_values.get(idx) else {
                         return;
                     };
                     AttributeValue::Enum(v.clone())
@@ -147,16 +143,12 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                 rest
             };
 
-            let attr_def = match db
-                .rel_attr_spec_bu_bo
-                .get(attr_name)
-                .and_then(|s| s.def.as_ref())
-            {
+            let spec = match db.rel_attr_spec_bu_bo.get(attr_name) {
                 Some(d) => d,
                 None => return,
             };
 
-            let attr_value: AttributeValue = match attr_def.kind {
+            let attr_value: AttributeValue = match spec.kind {
                 AttrType::String => AttributeValue::Str(value.to_string()),
                 AttrType::Int => match value.parse::<i64>() {
                     Ok(v) => AttributeValue::Int(v),
@@ -174,7 +166,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                     let Ok(idx) = value.parse::<usize>() else {
                         return;
                     };
-                    let Some(v) = attr_def.enum_values.get(idx) else {
+                    let Some(v) = spec.enum_values.get(idx) else {
                         return;
                     };
                     AttributeValue::Enum(v.clone())

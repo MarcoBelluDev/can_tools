@@ -5,9 +5,10 @@ use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
+use crate::dbc::types::attributes::AttrObject;
 use crate::dbc::types::signal::SignalDBC;
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeDef, AttributeSpec, AttributeValue},
+    attributes::{AttrType, AttributeSpec, AttributeValue},
     database::DatabaseDBC,
     errors::DbcSaveError,
     message::{MuxRole, MuxSelector},
@@ -239,41 +240,53 @@ fn write_bo_tx_bu<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
 
 // Outputs attribute definitions for database, node, message, and signal scopes.
 fn write_attribute_definitions<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
-    for (name, spec) in &db.db_attr_spec {
-        if let Some(def) = spec.def.as_ref() {
-            let signature = format_attribute_def(def);
-            write_fmt(out, format_args!("BA_DEF_ \"{}\" {};\n", name, signature))?;
-        }
+    // DB
+    for (name, spec) in db
+        .attr_spec
+        .iter()
+        .filter(|(_, s)| s.type_of_object == AttrObject::Database)
+    {
+        let signature: String = format_attribute_spec(spec);
+        write_fmt(out, format_args!("BA_DEF_ \"{}\" {};\n", name, signature))?;
     }
 
-    for (name, spec) in &db.node_attr_spec {
-        if let Some(def) = spec.def.as_ref() {
-            let signature = format_attribute_def(def);
-            write_fmt(
-                out,
-                format_args!("BA_DEF_ BU_ \"{}\" {};\n", name, signature),
-            )?;
-        }
+    // BU_
+    for (name, spec) in db
+        .attr_spec
+        .iter()
+        .filter(|(_, s)| s.type_of_object == AttrObject::Node)
+    {
+        let signature: String = format_attribute_spec(spec);
+        write_fmt(
+            out,
+            format_args!("BA_DEF_ BU_ \"{}\" {};\n", name, signature),
+        )?;
     }
 
-    for (name, spec) in &db.msg_attr_spec {
-        if let Some(def) = spec.def.as_ref() {
-            let signature = format_attribute_def(def);
-            write_fmt(
-                out,
-                format_args!("BA_DEF_ BO_ \"{}\" {};\n", name, signature),
-            )?;
-        }
+    // BO_
+    for (name, spec) in db
+        .attr_spec
+        .iter()
+        .filter(|(_, s)| s.type_of_object == AttrObject::Message)
+    {
+        let signature: String = format_attribute_spec(spec);
+        write_fmt(
+            out,
+            format_args!("BA_DEF_ BO_ \"{}\" {};\n", name, signature),
+        )?;
     }
 
-    for (name, spec) in &db.sig_attr_spec {
-        if let Some(def) = spec.def.as_ref() {
-            let signature = format_attribute_def(def);
-            write_fmt(
-                out,
-                format_args!("BA_DEF_ SG_ \"{}\" {};\n", name, signature),
-            )?;
-        }
+    // SG_
+    for (name, spec) in db
+        .attr_spec
+        .iter()
+        .filter(|(_, s)| s.type_of_object == AttrObject::Signal)
+    {
+        let signature: String = format_attribute_spec(spec);
+        write_fmt(
+            out,
+            format_args!("BA_DEF_ SG_ \"{}\" {};\n", name, signature),
+        )?;
     }
 
     Ok(())
@@ -282,23 +295,19 @@ fn write_attribute_definitions<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::R
 // Outputs attribute definitions for relation-scoped attributes.
 fn write_relation_attribute_definitions<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for (name, spec) in &db.rel_attr_spec_bu_sg {
-        if let Some(def) = spec.def.as_ref() {
-            let signature = format_attribute_def(def);
-            write_fmt(
-                out,
-                format_args!("BA_DEF_REL_ BU_SG_REL_ \"{}\" {};\n", name, signature),
-            )?;
-        }
+        let signature: String = format_attribute_spec(spec);
+        write_fmt(
+            out,
+            format_args!("BA_DEF_REL_ BU_SG_REL_ \"{}\" {};\n", name, signature),
+        )?;
     }
 
     for (name, spec) in &db.rel_attr_spec_bu_bo {
-        if let Some(def) = spec.def.as_ref() {
-            let signature = format_attribute_def(def);
-            write_fmt(
-                out,
-                format_args!("BA_DEF_REL_ BU_BO_REL_ \"{}\" {};\n", name, signature),
-            )?;
-        }
+        let signature: String = format_attribute_spec(spec);
+        write_fmt(
+            out,
+            format_args!("BA_DEF_REL_ BU_BO_REL_ \"{}\" {};\n", name, signature),
+        )?;
     }
 
     Ok(())
@@ -308,10 +317,10 @@ fn write_relation_attribute_definitions<W: Write>(db: &DatabaseDBC, out: &mut W)
 fn write_attribute_defaults<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     let mut defaults: BTreeMap<String, AttributeValue> = BTreeMap::new();
 
-    collect_defaults(&db.db_attr_spec, &mut defaults);
-    collect_defaults(&db.node_attr_spec, &mut defaults);
-    collect_defaults(&db.msg_attr_spec, &mut defaults);
-    collect_defaults(&db.sig_attr_spec, &mut defaults);
+    collect_defaults_from_scope(db, AttrObject::Database, &mut defaults);
+    collect_defaults_from_scope(db, AttrObject::Node, &mut defaults);
+    collect_defaults_from_scope(db, AttrObject::Message, &mut defaults);
+    collect_defaults_from_scope(db, AttrObject::Signal, &mut defaults);
 
     for (name, value) in defaults {
         let spec = lookup_attr_spec(db, &name);
@@ -329,8 +338,8 @@ fn write_attribute_defaults<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Resu
 fn write_relation_attribute_defaults<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     let mut defaults: BTreeMap<String, AttributeValue> = BTreeMap::new();
 
-    collect_defaults(&db.rel_attr_spec_bu_sg, &mut defaults);
-    collect_defaults(&db.rel_attr_spec_bu_bo, &mut defaults);
+    collect_defaults_from_scope(db, AttrObject::Message, &mut defaults);
+    collect_defaults_from_scope(db, AttrObject::Signal, &mut defaults);
 
     for (name, value) in defaults {
         let spec = db
@@ -350,14 +359,14 @@ fn write_relation_attribute_defaults<W: Write>(db: &DatabaseDBC, out: &mut W) ->
 // Emits attribute assignments for databases, nodes, messages, and signals.
 fn write_attribute_assignments<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::Result<()> {
     for (name, value) in &db.attributes {
-        let spec = db.db_attr_spec.get(name);
+        let spec = db.attr_spec.get(name);
         let value_str = format_attribute_value(value, spec);
         write_fmt(out, format_args!("BA_ \"{}\" {};\n", name, value_str))?;
     }
 
     for node in db.iter_nodes() {
         for (name, value) in &node.attributes {
-            let spec = db.node_attr_spec.get(name);
+            let spec = db.attr_spec.get(name);
             let value_str = format_attribute_value(value, spec);
             write_fmt(
                 out,
@@ -368,7 +377,7 @@ fn write_attribute_assignments<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::R
 
     for message in db.iter_messages() {
         for (name, value) in &message.attributes {
-            let spec = db.msg_attr_spec.get(name);
+            let spec = db.attr_spec.get(name);
             let value_str = format_attribute_value(value, spec);
             write_fmt(
                 out,
@@ -381,7 +390,7 @@ fn write_attribute_assignments<W: Write>(db: &DatabaseDBC, out: &mut W) -> io::R
         for sig_key in &message.signals {
             if let Some(signal) = db.get_sig_by_key(*sig_key) {
                 for (name, value) in &signal.attributes {
-                    let spec = db.sig_attr_spec.get(name);
+                    let spec = db.attr_spec.get(name);
                     let value_str = format_attribute_value(value, spec);
                     write_fmt(
                         out,
@@ -567,26 +576,26 @@ fn format_mux_tag(signal: &crate::dbc::types::signal::SignalDBC) -> String {
 }
 
 // Converts an attribute definition into its signature text.
-fn format_attribute_def(def: &AttributeDef) -> String {
-    match def.kind {
+fn format_attribute_spec(spec: &AttributeSpec) -> String {
+    match spec.kind {
         AttrType::String => "STRING".to_string(),
         AttrType::Int => format!(
             "INT {} {}",
-            def.int_min.unwrap_or_default(),
-            def.int_max.unwrap_or_default()
+            spec.int_min.unwrap_or_default(),
+            spec.int_max.unwrap_or_default()
         ),
         AttrType::Hex => format!(
             "HEX {} {}",
-            def.hex_min.unwrap_or_default(),
-            def.hex_max.unwrap_or_default()
+            spec.hex_min.unwrap_or_default(),
+            spec.hex_max.unwrap_or_default()
         ),
         AttrType::Float => format!(
             "FLOAT {} {}",
-            format_f64(def.float_min.unwrap_or_default()),
-            format_f64(def.float_max.unwrap_or_default())
+            format_f64(spec.float_min.unwrap_or_default()),
+            format_f64(spec.float_max.unwrap_or_default())
         ),
         AttrType::Enum => {
-            let joined = def
+            let joined = spec
                 .enum_values
                 .iter()
                 .map(|value| format!("\"{}\"", escape_dbc_string(value)))
@@ -605,9 +614,7 @@ fn format_attribute_value(value: &AttributeValue, spec: Option<&AttributeSpec>) 
         AttributeValue::Hex(v) => v.to_string(),
         AttributeValue::Float(v) => format_f64(*v),
         AttributeValue::Enum(selected) => {
-            if let Some(spec) = spec
-                .and_then(|s| s.def.as_ref())
-                .filter(|def| matches!(def.kind, AttrType::Enum))
+            if let Some(spec) = spec.filter(|s| matches!(s.kind, AttrType::Enum))
                 && let Some(idx) = spec.enum_values.iter().position(|entry| entry == selected)
             {
                 return idx.to_string();
@@ -650,24 +657,25 @@ fn escape_dbc_string(input: &str) -> String {
 }
 
 // Collects default attribute values across scopes into a single map.
-fn collect_defaults(
-    source: &BTreeMap<String, AttributeSpec>,
+fn collect_defaults_from_scope(
+    db: &DatabaseDBC,
+    scope: AttrObject,
     target: &mut BTreeMap<String, AttributeValue>,
 ) {
-    for (name, spec) in source {
+    for (name, spec) in db
+        .attr_spec
+        .iter()
+        .filter(|(_, s)| s.type_of_object == scope)
+    {
         if let Some(default) = spec.default.clone() {
+            // first wins (stesso comportamento della tua versione a 4 mappe)
             target.entry(name.clone()).or_insert(default);
         }
     }
 }
-
 // Looks up an attribute specification regardless of its scope.
 fn lookup_attr_spec<'a>(db: &'a DatabaseDBC, name: &str) -> Option<&'a AttributeSpec> {
-    db.db_attr_spec
-        .get(name)
-        .or_else(|| db.node_attr_spec.get(name))
-        .or_else(|| db.msg_attr_spec.get(name))
-        .or_else(|| db.sig_attr_spec.get(name))
+    db.attr_spec.get(name)
 }
 
 // Writes formatted arguments to the writer while preserving io::Error details.

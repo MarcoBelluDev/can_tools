@@ -14,7 +14,7 @@
 //!   only the index of the most recent frame and formats absolute timestamps
 //!   with a lightweight formatter.
 //!
-//! Docs updated: 2025-10-09 — refreshed documentation for parser behaviour and feature flags.
+//! Docs updated: 2025-10-23
 //!
 #[cfg(feature = "asc")]
 pub mod asc;

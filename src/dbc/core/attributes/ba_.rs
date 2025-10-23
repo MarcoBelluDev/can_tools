@@ -54,10 +54,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         };
     }
 
-    if let Some(attr_spec) = db.db_attr_spec.get_mut(attr_name)
-        && let Some(attr_def) = &attr_spec.def
-    {
-        let attr_value: AttributeValue = match attr_def.kind {
+    if let Some(attr_spec) = db.attr_spec.get_mut(attr_name) {
+        let attr_value: AttributeValue = match attr_spec.kind {
             AttrType::String => AttributeValue::Str(value.to_string()),
             AttrType::Int => {
                 let Ok(num) = value.parse::<i64>() else {
@@ -82,7 +80,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                 let Ok(idx) = value.parse::<usize>() else {
                     return;
                 };
-                let Some(v) = attr_def.enum_values.get(idx) else {
+                let Some(v) = attr_spec.enum_values.get(idx) else {
                     return;
                 };
                 AttributeValue::Enum(v.clone())

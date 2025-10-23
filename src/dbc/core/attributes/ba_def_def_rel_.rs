@@ -27,10 +27,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
     // Locate the attribute spec among relation groups. Attribute names are expected
     // to be unique among relation specs within a DBC.
-    if let Some(spec) = db.rel_attr_spec_bu_sg.get_mut(attr_name)
-        && let Some(def) = &spec.def
-    {
-        match def.kind {
+    if let Some(spec) = db.rel_attr_spec_bu_sg.get_mut(attr_name) {
+        match spec.kind {
             AttrType::String => spec.default = Some(AttributeValue::Str(value.to_string())),
             AttrType::Int => match value.parse::<i64>() {
                 Ok(n) => spec.default = Some(AttributeValue::Int(n)),
@@ -46,7 +44,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             },
             AttrType::Enum => {
                 // Accept only string default for ENUM
-                if def.enum_values.iter().any(|s| s == value) {
+                if spec.enum_values.iter().any(|s| s == value) {
                     spec.default = Some(AttributeValue::Str(value.to_string()));
                 }
             }
@@ -54,10 +52,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         return;
     }
 
-    if let Some(spec) = db.rel_attr_spec_bu_bo.get_mut(attr_name)
-        && let Some(def) = &spec.def
-    {
-        match def.kind {
+    if let Some(spec) = db.rel_attr_spec_bu_bo.get_mut(attr_name) {
+        match spec.kind {
             AttrType::String => spec.default = Some(AttributeValue::Str(value.to_string())),
             AttrType::Int => {
                 if let Ok(n) = value.parse::<i64>() {
@@ -75,7 +71,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                 }
             }
             AttrType::Enum => {
-                if def.enum_values.iter().any(|s| s == value) {
+                if spec.enum_values.iter().any(|s| s == value) {
                     spec.default = Some(AttributeValue::Str(value.to_string()));
                 }
             }

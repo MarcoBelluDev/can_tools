@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::dbc::{
     core::message_layout,
     types::{
-        attributes::{AttributeSpec, AttributeValue},
+        attributes::{AttrObject, AttributeSpec, AttributeValue},
         errors::DatabaseError,
         message::{IdFormat, MessageDBC, MuxRole, MuxSelector},
         node::NodeDBC,
@@ -64,10 +64,7 @@ pub struct DatabaseDBC {
     pub attributes: BTreeMap<String, AttributeValue>,
 
     // --- Attributes Spec ---
-    pub db_attr_spec: BTreeMap<String, AttributeSpec>,
-    pub node_attr_spec: BTreeMap<String, AttributeSpec>,
-    pub msg_attr_spec: BTreeMap<String, AttributeSpec>,
-    pub sig_attr_spec: BTreeMap<String, AttributeSpec>,
+    pub attr_spec: BTreeMap<String, AttributeSpec>,
 
     // --- Relational Attributes Spec ---
     // Definitions (BA_DEF_REL_) and defaults (BA_DEF_DEF_REL_) for attributes that
@@ -120,8 +117,13 @@ impl DatabaseDBC {
             ..Default::default()
         };
 
-        for (attr_name, spec) in &self.node_attr_spec {
-            if let Some(default_value) = spec.default.as_ref() {
+        // add attribute with default value
+        for (attr_name, spec) in self
+            .attr_spec
+            .iter()
+            .filter(|(_, s)| s.type_of_object == AttrObject::Node)
+        {
+            if let Some(default_value) = &spec.default {
                 node.attributes
                     .insert(attr_name.clone(), default_value.clone());
             }
@@ -413,7 +415,7 @@ impl DatabaseDBC {
             IdFormat::Standard
         };
 
-        let msg_key: MessageKey = self.messages.insert(MessageDBC {
+        let mut message: MessageDBC = MessageDBC {
             id_format,
             id,
             id_hex: id_hex.clone(),
@@ -425,7 +427,22 @@ impl DatabaseDBC {
                 "CAN FD".into()
             },
             ..Default::default()
-        });
+        };
+
+        // add attribute with default value
+        for (attr_name, spec) in self
+            .attr_spec
+            .iter()
+            .filter(|(_, s)| s.type_of_object == AttrObject::Message)
+        {
+            if let Some(default_value) = &spec.default {
+                message
+                    .attributes
+                    .insert(attr_name.clone(), default_value.clone());
+            }
+        }
+
+        let msg_key: MessageKey = self.messages.insert(message);
 
         self.messages_order.push(msg_key);
 
@@ -643,6 +660,18 @@ impl DatabaseDBC {
             ..Default::default()
         };
         sig.compile_inline();
+
+        // add attribute with default value
+        for (attr_name, spec) in self
+            .attr_spec
+            .iter()
+            .filter(|(_, s)| s.type_of_object == AttrObject::Signal)
+        {
+            if let Some(default_value) = &spec.default {
+                sig.attributes
+                    .insert(attr_name.clone(), default_value.clone());
+            }
+        }
 
         let sig_key: SignalKey = self.signals.insert(sig);
         self.signals_order.push(sig_key);

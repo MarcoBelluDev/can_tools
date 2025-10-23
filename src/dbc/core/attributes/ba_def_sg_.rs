@@ -1,6 +1,6 @@
 use crate::dbc::core::strings::collect_all_quoted;
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeDef, AttributeSpec},
+    attributes::{AttrObject, AttrType, AttributeSpec},
     database::DatabaseDBC,
 };
 
@@ -42,59 +42,57 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         None => return,
     };
 
-    let mut attr_def: AttributeDef = AttributeDef::default();
     let mut attr_spec: AttributeSpec = AttributeSpec::default();
-
-    attr_def.name = name.to_string();
 
     match attr_type {
         "STRING" => {
-            attr_def.kind = AttrType::String;
+            attr_spec.kind = AttrType::String;
         }
         "INT" => {
-            attr_def.kind = AttrType::Int;
-            attr_def.int_min = match parts.next() {
+            attr_spec.kind = AttrType::Int;
+            attr_spec.int_min = match parts.next() {
                 Some(a) => Some(a.parse::<i64>().unwrap_or_default()),
                 None => return,
             };
-            attr_def.int_max = match parts.next() {
+            attr_spec.int_max = match parts.next() {
                 Some(a) => Some(a.parse::<i64>().unwrap_or_default()),
                 None => return,
             };
         }
         "HEX" => {
-            attr_def.kind = AttrType::Hex;
-            attr_def.hex_min = match parts.next() {
+            attr_spec.kind = AttrType::Hex;
+            attr_spec.hex_min = match parts.next() {
                 Some(a) => Some(a.parse::<u64>().unwrap_or_default()),
                 None => return,
             };
-            attr_def.hex_max = match parts.next() {
+            attr_spec.hex_max = match parts.next() {
                 Some(a) => Some(a.parse::<u64>().unwrap_or_default()),
                 None => return,
             };
         }
         "FLOAT" => {
-            attr_def.kind = AttrType::Float;
-            attr_def.float_min = match parts.next() {
+            attr_spec.kind = AttrType::Float;
+            attr_spec.float_min = match parts.next() {
                 Some(a) => Some(a.parse::<f64>().unwrap_or_default()),
                 None => return,
             };
-            attr_def.float_max = match parts.next() {
+            attr_spec.float_max = match parts.next() {
                 Some(a) => Some(a.parse::<f64>().unwrap_or_default()),
                 None => return,
             };
         }
         "ENUM" => {
-            attr_def.kind = AttrType::Enum;
+            attr_spec.kind = AttrType::Enum;
             let mut quoted: Vec<String> = collect_all_quoted(line_copy);
             if !quoted.is_empty() {
                 quoted.remove(0); // remove attribute name
             }
-            attr_def.enum_values = quoted;
+            attr_spec.enum_values = quoted;
         }
         _ => {}
     }
 
-    attr_spec.def = Some(attr_def);
-    db.sig_attr_spec.insert(name.to_string(), attr_spec);
+    attr_spec.name = name.to_string();
+    attr_spec.type_of_object = AttrObject::Signal;
+    db.attr_spec.insert(name.to_string(), attr_spec);
 }

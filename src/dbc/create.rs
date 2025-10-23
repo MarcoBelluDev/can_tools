@@ -1,6 +1,6 @@
 use chrono::{DateTime, Datelike, IsoWeek, Local, NaiveDate};
 
-use crate::dbc::types::attributes::{AttrType, AttributeDef, AttributeSpec, AttributeValue};
+use crate::dbc::types::attributes::{AttrObject, AttrType, AttributeSpec, AttributeValue};
 use crate::dbc::types::database::{BusType, DatabaseDBC};
 use crate::dbc::types::errors::DbcCreateError;
 
@@ -32,68 +32,59 @@ pub fn new_database(
     };
 
     // Fill in default DBName
-    let dbname_def: AttributeDef = AttributeDef {
+    let dbname_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
         name: "DBName".to_string(),
         kind: AttrType::String,
+        default: Some(AttributeValue::Str("".to_string())),
         ..Default::default()
     };
-    let dbname_spec: AttributeSpec = AttributeSpec {
-        def: Some(dbname_def),
-        default: Some(AttributeValue::Str("".to_string())),
-    };
-    db.db_attr_spec.insert("DBName".to_string(), dbname_spec);
+    db.attr_spec.insert("DBName".to_string(), dbname_spec);
 
     db.attributes
         .insert("DBName".to_string(), AttributeValue::Str(db.name.clone()));
 
     // Fill in default BusType
     let bustype_label: String = bustype.to_str();
-    let bustype_def: AttributeDef = AttributeDef {
+    let bustype_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Str("".to_string())),
         name: "BusType".to_string(),
         kind: AttrType::String,
         ..Default::default()
     };
-    let bustype_spec: AttributeSpec = AttributeSpec {
-        def: Some(bustype_def),
-        default: Some(AttributeValue::Str("".to_string())),
-    };
-    db.db_attr_spec.insert("BusType".to_string(), bustype_spec);
+    db.attr_spec.insert("BusType".to_string(), bustype_spec);
 
     db.attributes
         .insert("BusType".to_string(), AttributeValue::Str(bustype_label));
 
     // Fill in default Baudrate for Standard CAN and its definition
-    let baudrate_def: AttributeDef = AttributeDef {
+    let baudrate_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Int(500_000)),
         name: "Baudrate".to_string(),
         kind: AttrType::Int,
         int_min: Some(1),
         int_max: Some(1_000_000),
         ..Default::default()
     };
-    let baudrate_spec: AttributeSpec = AttributeSpec {
-        def: Some(baudrate_def),
-        default: Some(AttributeValue::Int(500_000)),
-    };
-    db.db_attr_spec
-        .insert("Baudrate".to_string(), baudrate_spec);
+    db.attr_spec.insert("Baudrate".to_string(), baudrate_spec);
 
     db.attributes
         .insert("Baudrate".to_string(), AttributeValue::Int(500_000));
 
     // Fill in default Baudrate for CANFD and its definition (only if BusType==CanFd)
     if bustype == BusType::CanFd {
-        let baudrate_canfd_def: AttributeDef = AttributeDef {
+        let baudrate_canfd_spec: AttributeSpec = AttributeSpec {
+            type_of_object: AttrObject::Database,
+            default: Some(AttributeValue::Int(500_000)),
             name: "BaudrateCANFD".to_string(),
             kind: AttrType::Int,
             int_min: Some(1),
             int_max: Some(16_000_000),
             ..Default::default()
         };
-        let baudrate_canfd_spec: AttributeSpec = AttributeSpec {
-            def: Some(baudrate_canfd_def),
-            default: Some(AttributeValue::Int(2_000_000)),
-        };
-        db.db_attr_spec
+        db.attr_spec
             .insert("BaudrateCANFD".to_string(), baudrate_canfd_spec);
 
         db.attributes
@@ -112,18 +103,16 @@ pub fn new_database(
     let year_last_2digit: i32 = year % 100;
 
     // Fill in default VersionDay
-    let versionday_def: AttributeDef = AttributeDef {
+    let versionday_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Int(30)),
         name: "VersionDay".to_string(),
         kind: AttrType::Int,
         int_min: Some(1),
         int_max: Some(31),
         ..Default::default()
     };
-    let versionday_spec: AttributeSpec = AttributeSpec {
-        def: Some(versionday_def),
-        default: Some(AttributeValue::Int(30)),
-    };
-    db.db_attr_spec
+    db.attr_spec
         .insert("VersionDay".to_string(), versionday_spec);
 
     db.attributes.insert(
@@ -132,22 +121,16 @@ pub fn new_database(
     );
 
     // Fill in default VersionMonth
-    let mut version_month_def: AttributeDef = AttributeDef {
-        name: "VersionDay".to_string(),
+    let version_month_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Int(4)),
+        name: "VersionMonth".to_string(),
         kind: AttrType::Int,
         int_min: Some(1),
-        int_max: Some(31),
+        int_max: Some(12),
         ..Default::default()
     };
-    version_month_def.name = "VersionMonth".to_string();
-    version_month_def.kind = AttrType::Int;
-    version_month_def.int_min = Some(1);
-    version_month_def.int_max = Some(12);
-    let version_month_spec: AttributeSpec = AttributeSpec {
-        def: Some(version_month_def),
-        default: Some(AttributeValue::Int(4)),
-    };
-    db.db_attr_spec
+    db.attr_spec
         .insert("VersionMonth".to_string(), version_month_spec);
 
     db.attributes.insert(
@@ -156,19 +139,17 @@ pub fn new_database(
     );
 
     // Fill in default VersionWeek
-    let version_week_def: AttributeDef = AttributeDef {
+    let version_week_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Int(18)),
         name: "VersionWeek".to_string(),
         kind: AttrType::Int,
         int_min: Some(1),
         int_max: Some(52),
         ..Default::default()
     };
-    let version_month_spec: AttributeSpec = AttributeSpec {
-        def: Some(version_week_def),
-        default: Some(AttributeValue::Int(18)),
-    };
-    db.db_attr_spec
-        .insert("VersionWeek".to_string(), version_month_spec);
+    db.attr_spec
+        .insert("VersionWeek".to_string(), version_week_spec);
 
     db.attributes.insert(
         "VersionWeek".to_string(),
@@ -176,18 +157,16 @@ pub fn new_database(
     );
 
     // Fill in default VersionYear
-    let version_year_def: AttributeDef = AttributeDef {
+    let version_year_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Int(25)),
         name: "VersionYear".to_string(),
         kind: AttrType::Int,
         int_min: Some(1),
         int_max: Some(99),
         ..Default::default()
     };
-    let version_year_spec: AttributeSpec = AttributeSpec {
-        def: Some(version_year_def),
-        default: Some(AttributeValue::Int(25)),
-    };
-    db.db_attr_spec
+    db.attr_spec
         .insert("VersionYear".to_string(), version_year_spec);
 
     db.attributes.insert(
@@ -196,34 +175,30 @@ pub fn new_database(
     );
 
     // Fill in default VersionNumber
-    let version_number_def: AttributeDef = AttributeDef {
+    let version_number_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Int(1)),
         name: "VersionNumber".to_string(),
         kind: AttrType::Int,
         int_min: Some(1),
         int_max: Some(65535),
         ..Default::default()
     };
-    let version_number_spec: AttributeSpec = AttributeSpec {
-        def: Some(version_number_def),
-        default: Some(AttributeValue::Int(1)),
-    };
-    db.db_attr_spec
+    db.attr_spec
         .insert("VersionNumber".to_string(), version_number_spec);
 
     db.attributes
         .insert("VersionNumber".to_string(), AttributeValue::Int(1));
 
     // Fill in default Manufacturer
-    let manufacturer_def: AttributeDef = AttributeDef {
+    let manufacturer_spec: AttributeSpec = AttributeSpec {
+        type_of_object: AttrObject::Database,
+        default: Some(AttributeValue::Str("".to_string())),
         name: "Manufacturer".to_string(),
         kind: AttrType::String,
         ..Default::default()
     };
-    let manufacturer_spec: AttributeSpec = AttributeSpec {
-        def: Some(manufacturer_def),
-        default: Some(AttributeValue::Str("".to_string())),
-    };
-    db.db_attr_spec
+    db.attr_spec
         .insert("Manufacturer".to_string(), manufacturer_spec);
 
     db.attributes.insert(
