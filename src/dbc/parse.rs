@@ -225,6 +225,7 @@ pub fn from_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
     }
 
     // re-order
+    DatabaseDBC::sort_attribute_map(&mut db.attributes);
     db.sort_db_nodes_by_name();
     db.sort_db_messages_by_name();
     db.sort_db_signals_by_name();

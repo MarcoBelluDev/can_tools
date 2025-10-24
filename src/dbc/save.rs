@@ -667,10 +667,10 @@ fn collect_defaults_from_scope(
         .iter()
         .filter(|(_, s)| s.type_of_object == scope)
     {
-        if let Some(default) = spec.default.clone() {
-            // first wins (stesso comportamento della tua versione a 4 mappe)
-            target.entry(name.clone()).or_insert(default);
-        }
+        // first wins (stesso comportamento della tua versione a 4 mappe)
+        target
+            .entry(name.clone())
+            .or_insert_with(|| spec.default.clone());
     }
 }
 // Looks up an attribute specification regardless of its scope.

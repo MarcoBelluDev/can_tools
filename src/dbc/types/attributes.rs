@@ -16,7 +16,7 @@ pub struct AttributeSpec {
     pub float_max: Option<f64>,
     // optional vec<String> for enum entries
     pub enum_values: Vec<String>,
-    pub default: Option<AttributeValue>, // from BA_DEF_DEF_
+    pub default: AttributeValue, // from BA_DEF_DEF_
     pub type_of_object: AttrObject,
 }
 impl AttributeSpec {
@@ -86,31 +86,23 @@ impl AttributeSpec {
     }
     pub fn default_to_string(&self) -> String {
         match &self.default {
-            Some(attr_value) => {
-                match attr_value {
-                    AttributeValue::Str(s) => s.to_string(),
-                    AttributeValue::Int(v) => v.to_string(),
-                    AttributeValue::Hex(v) => {
-                        let s: String = format!("0x{:X}", v);
-                        s
+            AttributeValue::Str(s) => s.to_string(),
+            AttributeValue::Int(v) => v.to_string(),
+            AttributeValue::Hex(v) => format!("0x{:X}", v),
+            AttributeValue::Float(v) => {
+                // stampa compatta tipo la tua Display
+                let mut s: String = v.to_string();
+                if s.contains('.') {
+                    while s.ends_with('0') {
+                        s.pop();
                     }
-                    AttributeValue::Float(v) => {
-                        // stampa compatta tipo la tua Display
-                        let mut s: String = v.to_string();
-                        if s.contains('.') {
-                            while s.ends_with('0') {
-                                s.pop();
-                            }
-                            if s.ends_with('.') {
-                                s.pop();
-                            }
-                        }
-                        s
+                    if s.ends_with('.') {
+                        s.pop();
                     }
-                    AttributeValue::Enum(s) => s.to_string(),
                 }
+                s
             }
-            None => "".to_string(),
+            AttributeValue::Enum(s) => s.to_string(),
         }
     }
 }
@@ -146,6 +138,11 @@ pub enum AttributeValue {
     Float(f64),
     Enum(String),
 }
+impl Default for AttributeValue {
+    fn default() -> Self {
+        AttributeValue::Str(String::new())
+    }
+}
 impl fmt::Display for AttributeValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -166,6 +163,18 @@ impl fmt::Display for AttributeValue {
                 write!(f, "{}", s)
             }
             AttributeValue::Enum(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl AttributeValue {
+    pub fn clear(&mut self) {
+        match self {
+            AttributeValue::Str(s) => s.clear(),
+            AttributeValue::Int(i) => *i = 0,
+            AttributeValue::Hex(h) => *h = 0,
+            AttributeValue::Float(x) => *x = 0.0,
+            AttributeValue::Enum(s) => s.clear(),
         }
     }
 }

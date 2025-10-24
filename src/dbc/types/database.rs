@@ -123,10 +123,8 @@ impl DatabaseDBC {
             .iter()
             .filter(|(_, s)| s.type_of_object == AttrObject::Node)
         {
-            if let Some(default_value) = &spec.default {
-                node.attributes
-                    .insert(attr_name.clone(), default_value.clone());
-            }
+            node.attributes
+                .insert(attr_name.clone(), spec.default.clone());
         }
 
         // create NodeKey and NodeDBC
@@ -435,11 +433,9 @@ impl DatabaseDBC {
             .iter()
             .filter(|(_, s)| s.type_of_object == AttrObject::Message)
         {
-            if let Some(default_value) = &spec.default {
-                message
-                    .attributes
-                    .insert(attr_name.clone(), default_value.clone());
-            }
+            message
+                .attributes
+                .insert(attr_name.clone(), spec.default.clone());
         }
 
         let msg_key: MessageKey = self.messages.insert(message);
@@ -667,10 +663,8 @@ impl DatabaseDBC {
             .iter()
             .filter(|(_, s)| s.type_of_object == AttrObject::Signal)
         {
-            if let Some(default_value) = &spec.default {
-                sig.attributes
-                    .insert(attr_name.clone(), default_value.clone());
-            }
+            sig.attributes
+                .insert(attr_name.clone(), spec.default.clone());
         }
 
         let sig_key: SignalKey = self.signals.insert(sig);
@@ -1334,6 +1328,112 @@ impl DatabaseDBC {
         }
     }
 
+    // -------------- Attribute Definition ---------------
+    /// Registers a new attribute specification on the database.
+    pub fn add_attribute_definition(&mut self, spec: AttributeSpec) -> Result<(), DatabaseError> {
+        if let Some(existing) = self.attr_spec.get(&spec.name)
+            && existing.type_of_object == spec.type_of_object
+        {
+            return Err(DatabaseError::AttributeAlreadyExists {
+                name: spec.name.clone(),
+                scope: spec.type_of_object,
+            });
+        }
+
+        let attr_name = spec.name.clone();
+        let default_value = spec.default.clone();
+        let scope = spec.type_of_object;
+
+        self.attr_spec.insert(attr_name.clone(), spec);
+
+        match scope {
+            AttrObject::Database => {
+                self.attributes.entry(attr_name).or_insert(default_value);
+                DatabaseDBC::sort_attribute_map(&mut self.attributes);
+            }
+            AttrObject::Node => {
+                let attr_name = attr_name.clone();
+                let default_value = default_value.clone();
+                self.for_each_node_mut(|node| {
+                    node.attributes
+                        .entry(attr_name.clone())
+                        .or_insert_with(|| default_value.clone());
+                });
+                self.sort_all_node_fields();
+            }
+            AttrObject::Message => {
+                let attr_name = attr_name.clone();
+                let default_value = default_value.clone();
+                self.for_each_message_mut(|message| {
+                    message
+                        .attributes
+                        .entry(attr_name.clone())
+                        .or_insert_with(|| default_value.clone());
+                });
+                self.sort_all_message_fields();
+            }
+            AttrObject::Signal => {
+                let attr_name = attr_name.clone();
+                let default_value = default_value.clone();
+                self.for_each_signal_mut(|signal| {
+                    signal
+                        .attributes
+                        .entry(attr_name.clone())
+                        .or_insert_with(|| default_value.clone());
+                });
+                self.sort_all_signal_fields();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Removes an attribute specification and clears it from all matching entities.
+    pub fn delete_attribute_definition(
+        &mut self,
+        name: String,
+        type_of_object: AttrObject,
+    ) -> Result<(), DatabaseError> {
+        let Some(spec) = self.attr_spec.get(&name) else {
+            return Err(DatabaseError::AttributeNotFound {
+                name,
+                scope: type_of_object,
+            });
+        };
+
+        if spec.type_of_object != type_of_object {
+            return Err(DatabaseError::AttributeNotFound {
+                name,
+                scope: type_of_object,
+            });
+        }
+
+        self.attr_spec.remove(&name);
+
+        match type_of_object {
+            AttrObject::Database => {
+                self.attributes.remove(&name);
+            }
+            AttrObject::Node => {
+                self.for_each_node_mut(|node| {
+                    node.attributes.remove(&name);
+                });
+            }
+            AttrObject::Message => {
+                self.for_each_message_mut(|message| {
+                    message.attributes.remove(&name);
+                });
+            }
+            AttrObject::Signal => {
+                self.for_each_signal_mut(|signal| {
+                    signal.attributes.remove(&name);
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     // -------------- Sorting ---------------
     /// Sort nodes_by_name case insensitive
     pub fn sort_db_nodes_by_name(&mut self) {
@@ -1394,6 +1494,7 @@ impl DatabaseDBC {
             node.messages_sent = sorted_msgs;
             node.tx_signals = sorted_sigs_sent;
             node.rx_signals = sorted_sigs_received;
+            Self::sort_attribute_map(&mut node.attributes);
         }
     }
 
@@ -1436,6 +1537,7 @@ impl DatabaseDBC {
             msg.sender_nodes = sorted_senders;
             msg.signals = sorted_sigs;
             msg.receiver_nodes = sorted_receivers;
+            Self::sort_attribute_map(&mut msg.attributes);
         }
     }
 
@@ -1460,7 +1562,23 @@ impl DatabaseDBC {
 
         if let Some(sig) = self.get_sig_by_key_mut(sig_key) {
             sig.receiver_nodes = sorted_nodes;
+            Self::sort_attribute_map(&mut sig.attributes);
         }
+    }
+
+    /// Sorts an attribute map using case-insensitive keys with ASCII tie-breaking.
+    pub fn sort_attribute_map(map: &mut BTreeMap<String, AttributeValue>) {
+        let mut entries: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        entries.sort_by(|(ka, _), (kb, _)| {
+            let lower_cmp = ka.to_ascii_lowercase().cmp(&kb.to_ascii_lowercase());
+            if lower_cmp == std::cmp::Ordering::Equal {
+                ka.cmp(kb)
+            } else {
+                lower_cmp
+            }
+        });
+        map.clear();
+        map.extend(entries);
     }
 
     /// For ALL NodeDBC entries, sort:
@@ -1504,11 +1622,14 @@ impl DatabaseDBC {
                     };
                     (missing, name, sk)
                 });
+                let mut attributes = node.attributes.clone();
+                Self::sort_attribute_map(&mut attributes);
                 NodePlan {
                     nk,
                     messages_sent: ms,
                     tx_signals: sr1,
                     rx_signals: sr2,
+                    attributes,
                 }
             })
             .collect();
@@ -1519,6 +1640,7 @@ impl DatabaseDBC {
                 node.messages_sent = p.messages_sent;
                 node.tx_signals = p.tx_signals;
                 node.rx_signals = p.rx_signals;
+                node.attributes = p.attributes;
             }
         }
     }
@@ -1562,16 +1684,19 @@ impl DatabaseDBC {
                     };
                     (missing, name, sk)
                 });
+                let mut attributes = msg.attributes.clone();
+                Self::sort_attribute_map(&mut attributes);
 
-                (mk, ns, ss, rn)
+                (mk, ns, ss, rn, attributes)
             })
             .collect();
 
-        for (mk, ns, ss, rn) in plans {
+        for (mk, ns, ss, rn, attributes) in plans {
             if let Some(msg) = self.get_message_by_key_mut(mk) {
                 msg.sender_nodes = ns;
                 msg.signals = ss;
                 msg.receiver_nodes = rn;
+                msg.attributes = attributes;
             }
         }
     }
@@ -1581,7 +1706,7 @@ impl DatabaseDBC {
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key.
     pub fn sort_all_signal_fields(&mut self) {
-        let plans: Vec<(SignalKey, Vec<NodeKey>)> = self
+        let plans: Vec<(SignalKey, Vec<NodeKey>, BTreeMap<String, AttributeValue>)> = self
             .signals
             .iter()
             .map(|(sk, sig)| {
@@ -1593,13 +1718,16 @@ impl DatabaseDBC {
                     };
                     (missing, name, nk)
                 });
-                (sk, ns)
+                let mut attributes = sig.attributes.clone();
+                Self::sort_attribute_map(&mut attributes);
+                (sk, ns, attributes)
             })
             .collect();
 
-        for (sk, ns) in plans {
+        for (sk, ns, attributes) in plans {
             if let Some(sig) = self.get_sig_by_key_mut(sk) {
                 sig.receiver_nodes = ns;
+                sig.attributes = attributes;
             }
         }
     }
@@ -1635,10 +1763,17 @@ struct NodePlan {
     messages_sent: Vec<MessageKey>,
     tx_signals: Vec<SignalKey>,
     rx_signals: Vec<SignalKey>,
+    attributes: BTreeMap<String, AttributeValue>,
 }
 
 /// Type alias to simplify clippy::type_complexity for message sorting plans.
-type MessageFieldPlan = (MessageKey, Vec<NodeKey>, Vec<SignalKey>, Vec<NodeKey>);
+type MessageFieldPlan = (
+    MessageKey,
+    Vec<NodeKey>,
+    Vec<SignalKey>,
+    Vec<NodeKey>,
+    BTreeMap<String, AttributeValue>,
+);
 
 const CAN_EFF_MASK: u32 = 0x1FFF_FFFF; // 29 bit
 const CAN_SFF_MASK: u32 = 0x0000_07FF; // 11 bit

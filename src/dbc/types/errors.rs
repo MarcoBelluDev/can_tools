@@ -1,7 +1,10 @@
 use std::io;
 use thiserror::Error;
 
-use crate::dbc::types::database::{MessageKey, NodeKey, SignalKey};
+use crate::dbc::types::{
+    attributes::AttrObject,
+    database::{MessageKey, NodeKey, SignalKey},
+};
 
 /// Errors produced while parsing a `.dbc` file.
 #[derive(Debug, Error)]
@@ -113,6 +116,10 @@ pub enum DatabaseError {
     MessageMissingDuringMultiplexing,
     #[error("Database is in an inconsistent state: {details}")]
     InconsistentState { details: &'static str },
+    #[error("Attribute '{name}' already defined for {scope}")]
+    AttributeAlreadyExists { name: String, scope: AttrObject },
+    #[error("Attribute '{name}' not defined for {scope}")]
+    AttributeNotFound { name: String, scope: AttrObject },
     #[error(transparent)]
     Layout(#[from] MessageLayoutError),
 }

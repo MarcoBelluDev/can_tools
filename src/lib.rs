@@ -14,7 +14,7 @@
 //!   only the index of the most recent frame and formats absolute timestamps
 //!   with a lightweight formatter.
 //!
-//! Docs updated: 2025-10-23
+//! Docs updated: 2025-10-24
 //!
 #[cfg(feature = "asc")]
 pub mod asc;

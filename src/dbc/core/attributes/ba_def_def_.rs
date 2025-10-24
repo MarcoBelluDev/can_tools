@@ -60,7 +60,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     if let Some(default_value) = parsed_default {
         // Save on spec
-        spec.default = Some(default_value.clone());
+        spec.default = default_value.clone();
 
         // And propagate to existing entities for non-DB scopes
         match spec.type_of_object {

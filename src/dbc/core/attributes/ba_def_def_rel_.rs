@@ -29,23 +29,23 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     // to be unique among relation specs within a DBC.
     if let Some(spec) = db.rel_attr_spec_bu_sg.get_mut(attr_name) {
         match spec.kind {
-            AttrType::String => spec.default = Some(AttributeValue::Str(value.to_string())),
+            AttrType::String => spec.default = AttributeValue::Str(value.to_string()),
             AttrType::Int => match value.parse::<i64>() {
-                Ok(n) => spec.default = Some(AttributeValue::Int(n)),
+                Ok(n) => spec.default = AttributeValue::Int(n),
                 Err(_) => return,
             },
             AttrType::Hex => match value.parse::<u64>() {
-                Ok(n) => spec.default = Some(AttributeValue::Hex(n)),
+                Ok(n) => spec.default = AttributeValue::Hex(n),
                 Err(_) => return,
             },
             AttrType::Float => match value.parse::<f64>() {
-                Ok(n) => spec.default = Some(AttributeValue::Float(n)),
+                Ok(n) => spec.default = AttributeValue::Float(n),
                 Err(_) => return,
             },
             AttrType::Enum => {
                 // Accept only string default for ENUM
                 if spec.enum_values.iter().any(|s| s == value) {
-                    spec.default = Some(AttributeValue::Str(value.to_string()));
+                    spec.default = AttributeValue::Str(value.to_string());
                 }
             }
         }
@@ -54,25 +54,25 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     if let Some(spec) = db.rel_attr_spec_bu_bo.get_mut(attr_name) {
         match spec.kind {
-            AttrType::String => spec.default = Some(AttributeValue::Str(value.to_string())),
+            AttrType::String => spec.default = AttributeValue::Str(value.to_string()),
             AttrType::Int => {
                 if let Ok(n) = value.parse::<i64>() {
-                    spec.default = Some(AttributeValue::Int(n))
+                    spec.default = AttributeValue::Int(n)
                 }
             }
             AttrType::Hex => {
                 if let Ok(n) = value.parse::<u64>() {
-                    spec.default = Some(AttributeValue::Hex(n))
+                    spec.default = AttributeValue::Hex(n)
                 }
             }
             AttrType::Float => {
                 if let Ok(n) = value.parse::<f64>() {
-                    spec.default = Some(AttributeValue::Float(n))
+                    spec.default = AttributeValue::Float(n)
                 }
             }
             AttrType::Enum => {
                 if spec.enum_values.iter().any(|s| s == value) {
-                    spec.default = Some(AttributeValue::Str(value.to_string()));
+                    spec.default = AttributeValue::Str(value.to_string());
                 }
             }
         }
