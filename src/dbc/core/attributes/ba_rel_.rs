@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeValue},
+    attributes::{AttrValueType, AttributeValue},
     database::DatabaseDBC,
 };
 
@@ -40,7 +40,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         Some(a) => a,
         None => return,
     };
-    // Branch by relation kind
+    // Branch by relation value_type
     match relation {
         "BU_SG_REL_" => {
             // SG_ <MsgId> <SigName> <value>
@@ -76,21 +76,21 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                 None => return,
             };
 
-            let attr_value: AttributeValue = match spec.kind {
-                AttrType::String => AttributeValue::Str(value.to_string()),
-                AttrType::Int => match value.parse::<i64>() {
+            let attr_value: AttributeValue = match spec.value_type {
+                AttrValueType::String => AttributeValue::Str(value.to_string()),
+                AttrValueType::Int => match value.parse::<i64>() {
                     Ok(v) => AttributeValue::Int(v),
                     Err(_) => return,
                 },
-                AttrType::Hex => match value.parse::<u64>() {
+                AttrValueType::Hex => match value.parse::<u64>() {
                     Ok(v) => AttributeValue::Hex(v),
                     Err(_) => return,
                 },
-                AttrType::Float => match value.parse::<f64>() {
+                AttrValueType::Float => match value.parse::<f64>() {
                     Ok(v) => AttributeValue::Float(v),
                     Err(_) => return,
                 },
-                AttrType::Enum => {
+                AttrValueType::Enum => {
                     let Ok(idx) = value.parse::<usize>() else {
                         return;
                     };
@@ -148,21 +148,21 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                 None => return,
             };
 
-            let attr_value: AttributeValue = match spec.kind {
-                AttrType::String => AttributeValue::Str(value.to_string()),
-                AttrType::Int => match value.parse::<i64>() {
+            let attr_value: AttributeValue = match spec.value_type {
+                AttrValueType::String => AttributeValue::Str(value.to_string()),
+                AttrValueType::Int => match value.parse::<i64>() {
                     Ok(v) => AttributeValue::Int(v),
                     Err(_) => return,
                 },
-                AttrType::Hex => match value.parse::<u64>() {
+                AttrValueType::Hex => match value.parse::<u64>() {
                     Ok(v) => AttributeValue::Hex(v),
                     Err(_) => return,
                 },
-                AttrType::Float => match value.parse::<f64>() {
+                AttrValueType::Float => match value.parse::<f64>() {
                     Ok(v) => AttributeValue::Float(v),
                     Err(_) => return,
                 },
-                AttrType::Enum => {
+                AttrValueType::Enum => {
                     let Ok(idx) = value.parse::<usize>() else {
                         return;
                     };

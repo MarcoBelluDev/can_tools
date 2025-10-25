@@ -1,6 +1,6 @@
 use chrono::{DateTime, Datelike, IsoWeek, Local, NaiveDate};
 
-use crate::dbc::types::attributes::{AttrObject, AttrType, AttributeSpec, AttributeValue};
+use crate::dbc::types::attributes::{AttrObject, AttrValueType, AttributeSpec, AttributeValue};
 use crate::dbc::types::database::{BusType, DatabaseDBC};
 use crate::dbc::types::errors::DbcCreateError;
 
@@ -35,7 +35,7 @@ pub fn new_database(
     let dbname_spec: AttributeSpec = AttributeSpec {
         type_of_object: AttrObject::Database,
         name: "DBName".to_string(),
-        kind: AttrType::String,
+        value_type: AttrValueType::String,
         default: AttributeValue::Str("".to_string()),
         ..Default::default()
     };
@@ -50,7 +50,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Str("".to_string()),
         name: "BusType".to_string(),
-        kind: AttrType::String,
+        value_type: AttrValueType::String,
         ..Default::default()
     };
     db.attr_spec.insert("BusType".to_string(), bustype_spec);
@@ -63,7 +63,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Int(500_000),
         name: "Baudrate".to_string(),
-        kind: AttrType::Int,
+        value_type: AttrValueType::Int,
         int_min: Some(1),
         int_max: Some(1_000_000),
         ..Default::default()
@@ -79,7 +79,7 @@ pub fn new_database(
             type_of_object: AttrObject::Database,
             default: AttributeValue::Int(500_000),
             name: "BaudrateCANFD".to_string(),
-            kind: AttrType::Int,
+            value_type: AttrValueType::Int,
             int_min: Some(1),
             int_max: Some(16_000_000),
             ..Default::default()
@@ -107,7 +107,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Int(30),
         name: "VersionDay".to_string(),
-        kind: AttrType::Int,
+        value_type: AttrValueType::Int,
         int_min: Some(1),
         int_max: Some(31),
         ..Default::default()
@@ -125,7 +125,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Int(4),
         name: "VersionMonth".to_string(),
-        kind: AttrType::Int,
+        value_type: AttrValueType::Int,
         int_min: Some(1),
         int_max: Some(12),
         ..Default::default()
@@ -143,7 +143,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Int(18),
         name: "VersionWeek".to_string(),
-        kind: AttrType::Int,
+        value_type: AttrValueType::Int,
         int_min: Some(1),
         int_max: Some(52),
         ..Default::default()
@@ -161,7 +161,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Int(25),
         name: "VersionYear".to_string(),
-        kind: AttrType::Int,
+        value_type: AttrValueType::Int,
         int_min: Some(1),
         int_max: Some(99),
         ..Default::default()
@@ -179,7 +179,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Int(1),
         name: "VersionNumber".to_string(),
-        kind: AttrType::Int,
+        value_type: AttrValueType::Int,
         int_min: Some(1),
         int_max: Some(65535),
         ..Default::default()
@@ -195,7 +195,7 @@ pub fn new_database(
         type_of_object: AttrObject::Database,
         default: AttributeValue::Str("".to_string()),
         name: "Manufacturer".to_string(),
-        kind: AttrType::String,
+        value_type: AttrValueType::String,
         ..Default::default()
     };
     db.attr_spec

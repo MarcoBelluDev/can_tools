@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeValue},
+    attributes::{AttrValueType, AttributeValue},
     database::DatabaseDBC,
 };
 
@@ -33,25 +33,25 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         return;
     };
 
-    // Parse default according to kind
-    let parsed_default: Option<AttributeValue> = match spec.kind {
-        AttrType::String => Some(AttributeValue::Str(value_raw.to_string())),
-        AttrType::Int => match value_raw.parse::<i64>() {
+    // Parse default according to value_type
+    let parsed_default: Option<AttributeValue> = match spec.value_type {
+        AttrValueType::String => Some(AttributeValue::Str(value_raw.to_string())),
+        AttrValueType::Int => match value_raw.parse::<i64>() {
             Ok(n) => Some(AttributeValue::Int(n)),
             Err(_) => None,
         },
-        AttrType::Hex => match value_raw.parse::<u64>() {
+        AttrValueType::Hex => match value_raw.parse::<u64>() {
             Ok(n) => Some(AttributeValue::Hex(n)),
             Err(_) => None,
         },
-        AttrType::Float => match value_raw.parse::<f64>() {
+        AttrValueType::Float => match value_raw.parse::<f64>() {
             Ok(n) => Some(AttributeValue::Float(n)),
             Err(_) => None,
         },
-        AttrType::Enum => {
+        AttrValueType::Enum => {
             // Only accept if it's one of the enum variants
             if spec.enum_values.iter().any(|s| s == value_raw) {
-                Some(AttributeValue::Str(value_raw.to_string()))
+                Some(AttributeValue::Enum(value_raw.to_string()))
             } else {
                 None
             }

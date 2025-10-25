@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeValue},
+    attributes::{AttrValueType, AttributeValue},
     database::DatabaseDBC,
 };
 
@@ -28,21 +28,21 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     // Locate the attribute spec among relation groups. Attribute names are expected
     // to be unique among relation specs within a DBC.
     if let Some(spec) = db.rel_attr_spec_bu_sg.get_mut(attr_name) {
-        match spec.kind {
-            AttrType::String => spec.default = AttributeValue::Str(value.to_string()),
-            AttrType::Int => match value.parse::<i64>() {
+        match spec.value_type {
+            AttrValueType::String => spec.default = AttributeValue::Str(value.to_string()),
+            AttrValueType::Int => match value.parse::<i64>() {
                 Ok(n) => spec.default = AttributeValue::Int(n),
                 Err(_) => return,
             },
-            AttrType::Hex => match value.parse::<u64>() {
+            AttrValueType::Hex => match value.parse::<u64>() {
                 Ok(n) => spec.default = AttributeValue::Hex(n),
                 Err(_) => return,
             },
-            AttrType::Float => match value.parse::<f64>() {
+            AttrValueType::Float => match value.parse::<f64>() {
                 Ok(n) => spec.default = AttributeValue::Float(n),
                 Err(_) => return,
             },
-            AttrType::Enum => {
+            AttrValueType::Enum => {
                 // Accept only string default for ENUM
                 if spec.enum_values.iter().any(|s| s == value) {
                     spec.default = AttributeValue::Str(value.to_string());
@@ -53,24 +53,24 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     }
 
     if let Some(spec) = db.rel_attr_spec_bu_bo.get_mut(attr_name) {
-        match spec.kind {
-            AttrType::String => spec.default = AttributeValue::Str(value.to_string()),
-            AttrType::Int => {
+        match spec.value_type {
+            AttrValueType::String => spec.default = AttributeValue::Str(value.to_string()),
+            AttrValueType::Int => {
                 if let Ok(n) = value.parse::<i64>() {
                     spec.default = AttributeValue::Int(n)
                 }
             }
-            AttrType::Hex => {
+            AttrValueType::Hex => {
                 if let Ok(n) = value.parse::<u64>() {
                     spec.default = AttributeValue::Hex(n)
                 }
             }
-            AttrType::Float => {
+            AttrValueType::Float => {
                 if let Ok(n) = value.parse::<f64>() {
                     spec.default = AttributeValue::Float(n)
                 }
             }
-            AttrType::Enum => {
+            AttrValueType::Enum => {
                 if spec.enum_values.iter().any(|s| s == value) {
                     spec.default = AttributeValue::Str(value.to_string());
                 }

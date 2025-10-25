@@ -5,8 +5,8 @@ use std::fmt;
 pub struct AttributeSpec {
     /// Attribute name.
     pub name: String,
-    /// Attribute kind.
-    pub kind: AttrType,
+    /// Attribute value_type.
+    pub value_type: AttrValueType,
     // optional fields for numbers
     pub int_min: Option<i64>,
     pub int_max: Option<i64>,
@@ -21,20 +21,20 @@ pub struct AttributeSpec {
 }
 impl AttributeSpec {
     pub fn minimum_to_string(&self) -> String {
-        match self.kind {
-            AttrType::String | AttrType::Enum => String::new(),
+        match self.value_type {
+            AttrValueType::String | AttrValueType::Enum => String::new(),
 
-            AttrType::Int => match self.int_min {
+            AttrValueType::Int => match self.int_min {
                 Some(v) => v.to_string(),
                 None => String::new(),
             },
 
-            AttrType::Hex => match self.hex_min {
+            AttrValueType::Hex => match self.hex_min {
                 Some(v) => format!("0x{:X}", v),
                 None => String::new(),
             },
 
-            AttrType::Float => match self.float_min {
+            AttrValueType::Float => match self.float_min {
                 Some(v) => {
                     // stampa compatta tipo la tua Display
                     let mut s = v.to_string();
@@ -53,20 +53,20 @@ impl AttributeSpec {
         }
     }
     pub fn maximum_to_string(&self) -> String {
-        match self.kind {
-            AttrType::String | AttrType::Enum => String::new(),
+        match self.value_type {
+            AttrValueType::String | AttrValueType::Enum => String::new(),
 
-            AttrType::Int => match self.int_max {
+            AttrValueType::Int => match self.int_max {
                 Some(v) => v.to_string(),
                 None => String::new(),
             },
 
-            AttrType::Hex => match self.hex_max {
+            AttrValueType::Hex => match self.hex_max {
                 Some(v) => format!("0x{:X}", v),
                 None => String::new(),
             },
 
-            AttrType::Float => match self.float_max {
+            AttrValueType::Float => match self.float_max {
                 Some(v) => {
                     // stampa compatta tipo la tua Display
                     let mut s: String = v.to_string();
@@ -107,9 +107,9 @@ impl AttributeSpec {
     }
 }
 
-/// Attribute value kinds as declared by `BA_DEF_` lines in DBC.
+/// Attribute value value_types as declared by `BA_DEF_` lines in DBC.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AttrType {
+pub enum AttrValueType {
     #[default]
     String,
     Int,
@@ -117,14 +117,14 @@ pub enum AttrType {
     Float,
     Enum,
 }
-impl fmt::Display for AttrType {
+impl fmt::Display for AttrValueType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            AttrType::String => "String",
-            AttrType::Int => "Int",
-            AttrType::Hex => "Hex",
-            AttrType::Float => "Float",
-            AttrType::Enum => "Enum",
+            AttrValueType::String => "String",
+            AttrValueType::Int => "Int",
+            AttrValueType::Hex => "Hex",
+            AttrValueType::Float => "Float",
+            AttrValueType::Enum => "Enum",
         })
     }
 }

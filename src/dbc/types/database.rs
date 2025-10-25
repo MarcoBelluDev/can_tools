@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::dbc::{
     core::message_layout,
     types::{
-        attributes::{AttrObject, AttributeSpec, AttributeValue},
+        attributes::{AttrObject, AttrValueType, AttributeSpec, AttributeValue},
         errors::DatabaseError,
         message::{IdFormat, MessageDBC, MuxRole, MuxSelector},
         node::NodeDBC,
@@ -1388,45 +1388,167 @@ impl DatabaseDBC {
         Ok(())
     }
 
-    /// Removes an attribute specification and clears it from all matching entities.
-    pub fn delete_attribute_definition(
+    /// Edit an already existing attribute
+    pub fn edit_attribute_definition(
         &mut self,
-        name: String,
-        type_of_object: AttrObject,
+        old_name: &str,
+        old_object: &AttrObject,
+        new_spec: &AttributeSpec,
     ) -> Result<(), DatabaseError> {
-        let Some(spec) = self.attr_spec.get(&name) else {
+        if new_spec.type_of_object != *old_object {
+            return Err(DatabaseError::AttributeObjectChanging);
+        }
+
+        let Some(current_spec) = self.attr_spec.get(old_name) else {
             return Err(DatabaseError::AttributeNotFound {
-                name,
-                scope: type_of_object,
+                name: old_name.to_string(),
+                scope: *old_object,
             });
         };
 
-        if spec.type_of_object != type_of_object {
+        if current_spec.type_of_object != *old_object {
             return Err(DatabaseError::AttributeNotFound {
-                name,
-                scope: type_of_object,
+                name: old_name.to_string(),
+                scope: *old_object,
             });
         }
 
-        self.attr_spec.remove(&name);
+        let new_name: String = new_spec.name.clone();
 
-        match type_of_object {
+        if new_name != old_name {
+            if let Some(existing) = self.attr_spec.get(&new_name)
+                && existing.type_of_object == new_spec.type_of_object
+            {
+                return Err(DatabaseError::AttributeAlreadyExists {
+                    name: new_name.clone(),
+                    scope: new_spec.type_of_object,
+                });
+            }
+
+            self.attr_spec.remove(old_name);
+            self.attr_spec.insert(new_name.clone(), new_spec.clone());
+        } else if let Some(stored_spec) = self.attr_spec.get_mut(old_name) {
+            *stored_spec = new_spec.clone();
+        }
+
+        match *old_object {
             AttrObject::Database => {
-                self.attributes.remove(&name);
+                Self::reconcile_attribute_entry(&mut self.attributes, old_name, new_spec);
+                DatabaseDBC::sort_attribute_map(&mut self.attributes);
             }
             AttrObject::Node => {
                 self.for_each_node_mut(|node| {
-                    node.attributes.remove(&name);
+                    Self::reconcile_attribute_entry(&mut node.attributes, old_name, new_spec);
+                });
+                self.sort_all_node_fields();
+            }
+            AttrObject::Message => {
+                self.for_each_message_mut(|message| {
+                    Self::reconcile_attribute_entry(&mut message.attributes, old_name, new_spec);
+                });
+                self.sort_all_message_fields();
+            }
+            AttrObject::Signal => {
+                self.for_each_signal_mut(|signal| {
+                    Self::reconcile_attribute_entry(&mut signal.attributes, old_name, new_spec);
+                });
+                self.sort_all_signal_fields();
+            }
+        }
+
+        Ok(())
+    }
+
+    fn attribute_value_matches_spec(value: &AttributeValue, spec: &AttributeSpec) -> bool {
+        match (value, spec.value_type) {
+            (AttributeValue::Str(_), AttrValueType::String) => true,
+            (AttributeValue::Int(v), AttrValueType::Int) => {
+                spec.int_min.is_none_or(|min| *v >= min) && spec.int_max.is_none_or(|max| *v <= max)
+            }
+            (AttributeValue::Hex(v), AttrValueType::Hex) => {
+                spec.hex_min.is_none_or(|min| *v >= min) && spec.hex_max.is_none_or(|max| *v <= max)
+            }
+            (AttributeValue::Float(v), AttrValueType::Float) => {
+                spec.float_min.is_none_or(|min| *v >= min)
+                    && spec.float_max.is_none_or(|max| *v <= max)
+            }
+            (AttributeValue::Enum(v), AttrValueType::Enum) => {
+                spec.enum_values.iter().any(|entry| entry == v)
+            }
+            _ => false,
+        }
+    }
+
+    fn reconcile_attribute_entry(
+        map: &mut BTreeMap<String, AttributeValue>,
+        old_name: &str,
+        spec: &AttributeSpec,
+    ) {
+        if old_name == spec.name {
+            match map.get_mut(old_name) {
+                Some(value) => {
+                    if !Self::attribute_value_matches_spec(value, spec) {
+                        *value = spec.default.clone();
+                    }
+                }
+                None => {
+                    map.insert(spec.name.clone(), spec.default.clone());
+                }
+            }
+            return;
+        }
+
+        let default_value = spec.default.clone();
+        let new_name = spec.name.clone();
+        let candidate = map
+            .remove(old_name)
+            .or_else(|| map.remove(new_name.as_str()));
+        let mut updated = candidate.unwrap_or_else(|| default_value.clone());
+        if !Self::attribute_value_matches_spec(&updated, spec) {
+            updated = default_value;
+        }
+        map.insert(new_name, updated);
+    }
+
+    /// Removes an attribute specification and clears it from all matching entities.
+    pub fn delete_attribute_definition(
+        &mut self,
+        name: &str,
+        type_of_object: &AttrObject,
+    ) -> Result<(), DatabaseError> {
+        let Some(spec) = self.attr_spec.get(name) else {
+            return Err(DatabaseError::AttributeNotFound {
+                name: name.to_string(),
+                scope: *type_of_object,
+            });
+        };
+
+        if spec.type_of_object != *type_of_object {
+            return Err(DatabaseError::AttributeNotFound {
+                name: name.to_string(),
+                scope: *type_of_object,
+            });
+        }
+
+        self.attr_spec.remove(name);
+
+        match *type_of_object {
+            AttrObject::Database => {
+                self.attributes.remove(name);
+            }
+            AttrObject::Node => {
+                self.for_each_node_mut(|node| {
+                    node.attributes.remove(name);
                 });
             }
             AttrObject::Message => {
                 self.for_each_message_mut(|message| {
-                    message.attributes.remove(&name);
+                    message.attributes.remove(name);
                 });
             }
             AttrObject::Signal => {
                 self.for_each_signal_mut(|signal| {
-                    signal.attributes.remove(&name);
+                    signal.attributes.remove(name);
                 });
             }
         }

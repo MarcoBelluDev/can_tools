@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::dbc::types::attributes::AttrObject;
 use crate::dbc::types::signal::SignalDBC;
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeSpec, AttributeValue},
+    attributes::{AttrValueType, AttributeSpec, AttributeValue},
     database::DatabaseDBC,
     errors::DbcSaveError,
     message::{MuxRole, MuxSelector},
@@ -577,24 +577,24 @@ fn format_mux_tag(signal: &crate::dbc::types::signal::SignalDBC) -> String {
 
 // Converts an attribute definition into its signature text.
 fn format_attribute_spec(spec: &AttributeSpec) -> String {
-    match spec.kind {
-        AttrType::String => "STRING".to_string(),
-        AttrType::Int => format!(
+    match spec.value_type {
+        AttrValueType::String => "STRING".to_string(),
+        AttrValueType::Int => format!(
             "INT {} {}",
             spec.int_min.unwrap_or_default(),
             spec.int_max.unwrap_or_default()
         ),
-        AttrType::Hex => format!(
+        AttrValueType::Hex => format!(
             "HEX {} {}",
             spec.hex_min.unwrap_or_default(),
             spec.hex_max.unwrap_or_default()
         ),
-        AttrType::Float => format!(
+        AttrValueType::Float => format!(
             "FLOAT {} {}",
             format_f64(spec.float_min.unwrap_or_default()),
             format_f64(spec.float_max.unwrap_or_default())
         ),
-        AttrType::Enum => {
+        AttrValueType::Enum => {
             let joined = spec
                 .enum_values
                 .iter()
@@ -614,7 +614,7 @@ fn format_attribute_value(value: &AttributeValue, spec: Option<&AttributeSpec>) 
         AttributeValue::Hex(v) => v.to_string(),
         AttributeValue::Float(v) => format_f64(*v),
         AttributeValue::Enum(selected) => {
-            if let Some(spec) = spec.filter(|s| matches!(s.kind, AttrType::Enum))
+            if let Some(spec) = spec.filter(|s| matches!(s.value_type, AttrValueType::Enum))
                 && let Some(idx) = spec.enum_values.iter().position(|entry| entry == selected)
             {
                 return idx.to_string();

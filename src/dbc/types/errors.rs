@@ -120,6 +120,8 @@ pub enum DatabaseError {
     AttributeAlreadyExists { name: String, scope: AttrObject },
     #[error("Attribute '{name}' not defined for {scope}")]
     AttributeNotFound { name: String, scope: AttrObject },
+    #[error("Changing the Type of Object is not allowed")]
+    AttributeObjectChanging,
     #[error(transparent)]
     Layout(#[from] MessageLayoutError),
 }

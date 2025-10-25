@@ -1,6 +1,6 @@
 use crate::dbc::core::strings::collect_all_quoted;
 use crate::dbc::types::{
-    attributes::{AttrObject, AttrType, AttributeSpec},
+    attributes::{AttrObject, AttrValueType, AttributeSpec},
     database::DatabaseDBC,
 };
 
@@ -40,10 +40,10 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
 
     match attr_type {
         "STRING" => {
-            attr_spec.kind = AttrType::String;
+            attr_spec.value_type = AttrValueType::String;
         }
         "INT" => {
-            attr_spec.kind = AttrType::Int;
+            attr_spec.value_type = AttrValueType::Int;
             attr_spec.int_min = match parts.next() {
                 Some(a) => Some(a.parse::<i64>().unwrap_or_default()),
                 None => return,
@@ -54,7 +54,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             };
         }
         "HEX" => {
-            attr_spec.kind = AttrType::Hex;
+            attr_spec.value_type = AttrValueType::Hex;
             attr_spec.hex_min = match parts.next() {
                 Some(a) => Some(a.parse::<u64>().unwrap_or_default()),
                 None => return,
@@ -65,7 +65,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             };
         }
         "FLOAT" => {
-            attr_spec.kind = AttrType::Float;
+            attr_spec.value_type = AttrValueType::Float;
             attr_spec.float_min = match parts.next() {
                 Some(a) => Some(a.parse::<f64>().unwrap_or_default()),
                 None => return,
@@ -76,7 +76,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
             };
         }
         "ENUM" => {
-            attr_spec.kind = AttrType::Enum;
+            attr_spec.value_type = AttrValueType::Enum;
             let mut quoted: Vec<String> = collect_all_quoted(line_copy);
             if !quoted.is_empty() {
                 quoted.remove(0); // remove attribute name

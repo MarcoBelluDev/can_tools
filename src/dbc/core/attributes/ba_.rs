@@ -1,5 +1,5 @@
 use crate::dbc::types::{
-    attributes::{AttrType, AttributeValue},
+    attributes::{AttrValueType, AttributeValue},
     database::{BusType, DatabaseDBC},
 };
 
@@ -55,27 +55,27 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     }
 
     if let Some(attr_spec) = db.attr_spec.get_mut(attr_name) {
-        let attr_value: AttributeValue = match attr_spec.kind {
-            AttrType::String => AttributeValue::Str(value.to_string()),
-            AttrType::Int => {
+        let attr_value: AttributeValue = match attr_spec.value_type {
+            AttrValueType::String => AttributeValue::Str(value.to_string()),
+            AttrValueType::Int => {
                 let Ok(num) = value.parse::<i64>() else {
                     return;
                 };
                 AttributeValue::Int(num)
             }
-            AttrType::Hex => {
+            AttrValueType::Hex => {
                 let Ok(num) = value.parse::<u64>() else {
                     return;
                 };
                 AttributeValue::Hex(num)
             }
-            AttrType::Float => {
+            AttrValueType::Float => {
                 let Ok(num) = value.parse::<f64>() else {
                     return;
                 };
                 AttributeValue::Float(num)
             }
-            AttrType::Enum => {
+            AttrValueType::Enum => {
                 // Accept only numeric index into enum_values
                 let Ok(idx) = value.parse::<usize>() else {
                     return;
