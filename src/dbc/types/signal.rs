@@ -4,7 +4,7 @@ use crate::dbc::types::{
     message::{MuxRole, MuxSelector},
     node::NodeDBC,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
 /// Elementary step for extracting a bit field from a payload.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -225,6 +225,15 @@ pub enum Endianness {
     Intel, // 1
 }
 
+impl fmt::Display for Endianness {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Endianness::Motorola => f.write_str("Motorola"),
+            Endianness::Intel => f.write_str("Intel"),
+        }
+    }
+}
+
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum Signess {
     #[default]
@@ -232,4 +241,15 @@ pub enum Signess {
     Signed,     // +
     IeeeFloat,  // SIG_VALTYPE = 1
     IeeeDouble, // SIG_VALTYPE = 1
+}
+
+impl fmt::Display for Signess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Signess::Unsigned => f.write_str("Unsigned"),
+            Signess::Signed => f.write_str("Signed"),
+            Signess::IeeeFloat => f.write_str("IEEE Float"),
+            Signess::IeeeDouble => f.write_str("IEEE Double"),
+        }
+    }
 }

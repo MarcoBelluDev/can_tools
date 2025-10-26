@@ -3,7 +3,10 @@ use crate::dbc::types::{
     database::{DatabaseDBC, NodeKey, SignalKey},
     signal::SignalDBC,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt,
+};
 
 /// CAN message defined in the database (DBC/ARXML).
 ///
@@ -87,6 +90,16 @@ pub enum MuxRole {
     Multiplexed,
 }
 
+impl fmt::Display for MuxRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MuxRole::None => f.write_str("None"),
+            MuxRole::Multiplexor => f.write_str("Multiplexor"),
+            MuxRole::Multiplexed => f.write_str("Multiplexed"),
+        }
+    }
+}
+
 /// A selector for multiplexed signals: either a single value or a closed range.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MuxSelector {
@@ -100,6 +113,15 @@ impl Default for MuxSelector {
     fn default() -> Self {
         // Default is a no-op value; only meaningful when role == Multiplexed.
         MuxSelector::Value(0)
+    }
+}
+
+impl fmt::Display for MuxSelector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MuxSelector::Value(v) => write!(f, "Value({v})"),
+            MuxSelector::Range { min, max } => write!(f, "Range({min}..={max})"),
+        }
     }
 }
 
