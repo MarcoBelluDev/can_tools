@@ -24,17 +24,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
-name = "can_tools"
-version = "1.5.3"
-dependencies = [
- "chrono",
- "encoding_rs",
- "serde",
- "slotmap",
- "thiserror",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -68,6 +57,17 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+
+[[package]]
+name = "dbc_editor"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "encoding_rs",
+ "serde",
+ "slotmap",
+ "thiserror",
+]
 
 [[package]]
 name = "encoding_rs"

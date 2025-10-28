@@ -1,32 +1,19 @@
 [package]
-name = "can_tools"
-version = "1.5.3"
+name = "dbc_editor"
+version = "1.0.0"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
-description = "Mix of useful tools for CAN bus"
-license = "MIT"
-repository = "https://github.com/ROMA96x/can_tools"
-keywords = ["dbc", "can", "automotive", "ecu"]
-categories = ["parsing", "automotive", "embedded"]
-homepage = "https://github.com/ROMA96x/can_tools"
+description = "Rust editor for .dbc files"
 
 readme = "README.md"
 
 [lib]
-name = "can_tools"
+name = "dbc_editor"
 path = "src/lib.rs"
-
-[features]
-default = ["dbc", "asc"]
-# Core feature flags to include only what you need
-# - `dbc`: Database parser and types
-# - `asc`: Vector ASCII log parser (depends on `dbc`)
-dbc = ["dep:encoding_rs", "dep:slotmap"]
-asc = ["dbc"]
 
 [dependencies]
 chrono = "0.4.41"
-encoding_rs = { version = "0.8.35", optional = true }
+encoding_rs = "0.8.35"
 serde = { version = "1.0.219", features = ["derive"] }
-slotmap = { version = "1.0.7", optional = true }
+slotmap = "1.0.7"
 thiserror = "2.0.17"
