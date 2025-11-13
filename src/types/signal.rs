@@ -66,9 +66,42 @@ pub struct SignalDBC {
 
     // --- Signal Attribute Entry ---
     pub attributes: BTreeMap<String, AttributeValue>,
+
+    /// Raw time series of `[timestamp, raw]` pairs (timestamp in seconds).
+    pub raws: Vec<(f64, i64)>,
+
+    /// Value time series of `[timestamp, value]` pairs (timestamp in seconds).
+    /// value: raw * sig.factor + sig.offset;
+    pub values: Vec<(f64, f64)>,
 }
 
 impl SignalDBC {
+    const TIMESTAMP_MATCH_EPSILON: f64 = 1e-9;
+
+    #[inline]
+    fn sample_at_timestamp<T: Copy>(series: &[(f64, T)], timestamp: f64) -> Option<T> {
+        if !timestamp.is_finite() {
+            return None;
+        }
+        series.iter().find_map(|(ts, value)| {
+            if ts.is_finite() && (*ts - timestamp).abs() <= Self::TIMESTAMP_MATCH_EPSILON {
+                Some(*value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns the stored raw value that matches the provided timestamp.
+    pub fn raw_value_at(&self, timestamp: f64) -> Option<i64> {
+        Self::sample_at_timestamp(&self.raws, timestamp)
+    }
+
+    /// Returns the stored physical value that matches the provided timestamp.
+    pub fn value_at(&self, timestamp: f64) -> Option<f64> {
+        Self::sample_at_timestamp(&self.values, timestamp)
+    }
+
     /// Returns an immutable reference to a receiver node by name (case-insensitive).
     pub fn get_receiver_nodes_by_name<'a>(
         &self,

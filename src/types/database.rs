@@ -399,7 +399,7 @@ impl DatabaseDBC {
         }
 
         // check if message with provided ID already exist
-        if let Some(r) = self.get_msg_key_by_id(&id) {
+        if let Some(r) = self.get_msg_key_by_id(id) {
             self.current_msg = Some(r); // set found message as current_msg
             let id_hex: String = id_to_hex(id);
             return Err(DatabaseError::MessageIdAlreadyAssigned { id_hex });
@@ -571,8 +571,8 @@ impl DatabaseDBC {
     }
 
     /// Looks up the `MessageKey` by numeric CAN identifier.
-    pub fn get_msg_key_by_id(&self, id: &u32) -> Option<MessageKey> {
-        self.msg_key_by_id.get(id).copied()
+    pub fn get_msg_key_by_id(&self, id: u32) -> Option<MessageKey> {
+        self.msg_key_by_id.get(&id).copied()
     }
 
     /// Looks up the `MessageKey` by hexadecimal CAN identifier.
@@ -593,13 +593,13 @@ impl DatabaseDBC {
 
     /// Returns a `&MessageDBC` given the numeric CAN ID.
     pub fn get_message_by_id(&self, id: u32) -> Option<&MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_id(&id)?;
+        let key: MessageKey = self.get_msg_key_by_id(id)?;
         self.get_message_by_key(key)
     }
 
     /// Returns a `&mut MessageDBC` given the numeric CAN ID.
     pub fn get_message_by_id_mut(&mut self, id: u32) -> Option<&mut MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_id(&id)?;
+        let key: MessageKey = self.get_msg_key_by_id(id)?;
         self.get_message_by_key_mut(key)
     }
 

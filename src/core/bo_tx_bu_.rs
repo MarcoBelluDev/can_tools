@@ -44,7 +44,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     }
 
     // take MessageKey once before mutable borrow
-    let Some(msg_key) = db.get_msg_key_by_id(&id) else {
+    let Some(msg_key) = db.get_msg_key_by_id(id) else {
         return;
     };
 

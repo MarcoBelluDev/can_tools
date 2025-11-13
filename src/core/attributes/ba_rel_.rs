@@ -177,7 +177,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
                 Some(nk) => nk,
                 None => return,
             };
-            let msg_key = match db.get_msg_key_by_id(&msg_id) {
+            let msg_key = match db.get_msg_key_by_id(msg_id) {
                 Some(mk) => mk,
                 None => return,
             };
