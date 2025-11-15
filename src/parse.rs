@@ -81,30 +81,94 @@ pub fn from_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
         if read == 0 {
             return Ok(None);
         }
-        let (s, _, _) = WINDOWS_1252.decode(buf);
-        let src: String = s.into_owned();
-        let mut out: String = String::with_capacity(src.len());
-        for ch in src.chars() {
+        let (decoded, _, _) = WINDOWS_1252.decode(buf);
+        let decoded_ref: &str = decoded.as_ref();
+        let mut replaced: Option<String> = None;
+
+        for (idx, ch) in decoded_ref.char_indices() {
             match ch {
-                'ü' => out.push('u'),
-                'ö' => out.push('o'),
-                'ä' => out.push('a'),
-                'ß' => {
-                    out.push('s');
-                    out.push('s');
+                'ü' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('u');
                 }
-                'Ü' => out.push('U'),
-                'Ö' => out.push('O'),
-                'Ä' => out.push('A'),
-                '¿' => out.push('?'),
-                _ => out.push(ch),
+                'ö' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('o');
+                }
+                'ä' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('a');
+                }
+                'ß' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('s');
+                    buf.push('s');
+                }
+                'Ü' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('U');
+                }
+                'Ö' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('O');
+                }
+                'Ä' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('A');
+                }
+                '¿' => {
+                    let buf = replaced.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(decoded_ref.len());
+                        s.push_str(&decoded_ref[..idx]);
+                        s
+                    });
+                    buf.push('?');
+                }
+                _ => {
+                    if let Some(buf) = replaced.as_mut() {
+                        buf.push(ch);
+                    }
+                }
             }
         }
+
+        let mut line = match replaced {
+            Some(s) => s,
+            None => decoded.into_owned(),
+        };
         // trim trailing CR/LF to behave like .lines()
-        while out.ends_with(['\n', '\r']) {
-            out.pop();
+        while line.ends_with(['\n', '\r']) {
+            line.pop();
         }
-        Ok(Some(out))
+        Ok(Some(line))
     };
 
     // Read and process each .dbc line
