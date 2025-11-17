@@ -5,6 +5,7 @@ use crate::types::{
     node::NodeDBC,
 };
 use std::{collections::BTreeMap, fmt};
+use std::cmp::Ordering;
 
 /// Elementary step for extracting a bit field from a payload.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -76,7 +77,7 @@ pub struct SignalDBC {
 }
 
 impl SignalDBC {
-    const TIMESTAMP_MATCH_EPSILON: f64 = 1e-9;
+    const TIMESTAMP_MATCH_EPSILON: f64 = 1e-3;
 
     #[inline]
     fn sample_at_timestamp<T: Copy>(series: &[(f64, T)], timestamp: f64) -> Option<T> {
@@ -92,6 +93,26 @@ impl SignalDBC {
         })
     }
 
+    #[inline]
+    fn sample_at_timestamp_relaxed<T: Copy>(series: &[(f64, T)], timestamp: f64) -> Option<T> {
+        if !timestamp.is_finite() {
+            return None;
+        }
+    
+        series
+            .iter()
+            // tieni solo i timestamp finiti
+            .filter(|(ts, _)| ts.is_finite())
+            // trova quello con distanza minima dal timestamp richiesto
+            .min_by(|(ts_a, _), (ts_b, _)| {
+                let da: f64 = (*ts_a - timestamp).abs();
+                let db: f64 = (*ts_b - timestamp).abs();
+                da.partial_cmp(&db).unwrap_or(Ordering::Equal)
+            })
+            // prendi solo il value
+            .map(|(_, value)| *value)
+    }
+
     /// Returns the stored raw value that matches the provided timestamp.
     pub fn raw_value_at(&self, timestamp: f64) -> Option<i64> {
         Self::sample_at_timestamp(&self.raws, timestamp)
@@ -100,6 +121,16 @@ impl SignalDBC {
     /// Returns the stored physical value that matches the provided timestamp.
     pub fn value_at(&self, timestamp: f64) -> Option<f64> {
         Self::sample_at_timestamp(&self.values, timestamp)
+    }
+
+    /// Returns the stored relaxed raw value that matches the provided timestamp.
+    pub fn raw_value_at_relaxed(&self, timestamp: f64) -> Option<i64> {
+        Self::sample_at_timestamp_relaxed(&self.raws, timestamp)
+    }
+
+    /// Returns the stored relaxed physical value that matches the provided timestamp.
+    pub fn value_at_relaxed(&self, timestamp: f64) -> Option<f64> {
+        Self::sample_at_timestamp_relaxed(&self.values, timestamp)
     }
 
     /// Returns an immutable reference to a receiver node by name (case-insensitive).

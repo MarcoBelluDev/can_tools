@@ -1,6 +1,6 @@
 [package]
 name = "dbc_editor"
-version = "1.7.2"
+version = "1.7.3"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
 description = "Rust editor for .dbc files"
