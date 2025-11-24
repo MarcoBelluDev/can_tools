@@ -244,10 +244,18 @@ impl SignalDBC {
         let mut out: u64 = 0;
         for st in &self.steps {
             if let Some(&b) = bytes.get(st.byte_index as usize) {
-                let mask: u8 = if st.width == 8 {
+                if st.dst_lsb >= 64 {
+                    continue; // non possiamo rappresentare più di 64 bit
+                }
+                let bits_left: u16 = 64 - st.dst_lsb;
+                let take: u8 = st.width.min(bits_left as u8);
+                if take == 0 {
+                    continue;
+                }
+                let mask: u8 = if take == 8 {
                     0xFF
                 } else {
-                    ((1u16 << st.width) - 1) as u8
+                    ((1u16 << take) - 1) as u8
                 };
                 let chunk = ((b >> st.src_lsb) & mask) as u64;
                 out |= chunk << st.dst_lsb;
@@ -255,6 +263,7 @@ impl SignalDBC {
         }
         out
     }
+    
 
     /// Extracts the **signed** raw value from the payload, performing sign extension if needed.
     #[inline]
