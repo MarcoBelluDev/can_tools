@@ -1,6 +1,6 @@
 [package]
 name = "dbc_editor"
-version = "1.7.4"
+version = "1.7.5"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
 description = "Rust editor for .dbc files"
@@ -12,6 +12,7 @@ name = "dbc_editor"
 path = "src/lib.rs"
 
 [dependencies]
+autosar-data = "0.20.0"
 chrono = "0.4.41"
 encoding_rs = "0.8.35"
 serde = { version = "1.0.219", features = ["derive"] }

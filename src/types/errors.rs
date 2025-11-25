@@ -125,3 +125,22 @@ pub enum DatabaseError {
     #[error(transparent)]
     Layout(#[from] MessageLayoutError),
 }
+
+/// Errors produced while extracing DatabaseDBC information from an `.arxml` file.
+#[derive(Debug, Error)]
+pub enum ArxmlConvertError {
+    #[error("Not a valid .arxml file: {path}")]
+    InvalidExtension { path: String },
+    #[error("Failed to open '{path}'. \nError: {source}")]
+    OpenFile {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Failed while reading '{path}'. \nError: {source}")]
+    Read {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+}
