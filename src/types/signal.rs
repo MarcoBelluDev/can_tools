@@ -4,8 +4,8 @@ use crate::types::{
     message::{MuxRole, MuxSelector},
     node::NodeDBC,
 };
-use std::{collections::BTreeMap, fmt};
 use std::cmp::Ordering;
+use std::{collections::BTreeMap, fmt};
 
 /// Elementary step for extracting a bit field from a payload.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -98,7 +98,7 @@ impl SignalDBC {
         if !timestamp.is_finite() {
             return None;
         }
-    
+
         series
             .iter()
             // tieni solo i timestamp finiti
@@ -263,7 +263,6 @@ impl SignalDBC {
         }
         out
     }
-    
 
     /// Extracts the **signed** raw value from the payload, performing sign extension if needed.
     #[inline]

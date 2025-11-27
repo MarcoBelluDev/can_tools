@@ -1,11 +1,16 @@
-use crate::core;
-use crate::types::database::DatabaseDBC;
-use crate::types::errors::DbcParseError;
-
+use autosar_data::{AttributeName, AutosarModel, CharacterData, Element, ElementName, EnumItem};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 
 use encoding_rs::WINDOWS_1252;
+
+use crate::core;
+use crate::types::{
+    database::{BusType, DatabaseDBC, MessageKey, NodeKey},
+    errors::{ArxmlConvertError, DatabaseError, DbcParseError},
+    message::MuxRole,
+    signal::{Endianness, Signess},
+};
 
 /// Parses a DBC file and returns a populated [`DatabaseDBC`] instance.
 ///
@@ -46,7 +51,7 @@ use encoding_rs::WINDOWS_1252;
 /// - Internal parsing details are handled by [`DatabaseDBC`] methods and are **not** part of the public API.
 /// - Parsing stops only at the end of the file; malformed lines are skipped.
 ///
-pub fn from_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
+pub fn from_dbc_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
     // check if provided file has .dbc format
     if !path.ends_with(".dbc") {
         return Err(DbcParseError::InvalidExtension {
@@ -298,4 +303,373 @@ pub fn from_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
     db.sort_all_signal_fields();
 
     Ok(db)
+}
+
+/// Extracts one or more [`DatabaseDBC`] objects from a `.arxml` file by walking all
+/// defined `CAN-CLUSTER`s. Each cluster becomes its own database, populated with
+/// known messages, signals, and nodes derived from the frame ports.
+pub fn from_arxml_to_dbc(path: &str) -> Result<Vec<DatabaseDBC>, ArxmlConvertError> {
+    if !path.ends_with(".arxml") {
+        return Err(ArxmlConvertError::InvalidExtension {
+            path: path.to_string(),
+        });
+    }
+
+    let model: AutosarModel = AutosarModel::new();
+    let path_owned: String = path.to_string();
+
+    model
+        .load_file(path, false)
+        .map_err(|source| ArxmlConvertError::OpenFile {
+            path: path_owned.clone(),
+            source: io::Error::other(source),
+        })?;
+
+    let mut databases: Vec<DatabaseDBC> = Vec::new();
+
+    for element in model
+        .identifiable_elements()
+        .filter_map(|(_, weak)| weak.upgrade())
+    {
+        if element.element_name() == ElementName::CanCluster
+            && let Some(mut db) = build_can_database(&element)
+        {
+            // re-order
+            DatabaseDBC::sort_attribute_map(&mut db.attributes);
+            db.sort_db_nodes_by_name();
+            db.sort_db_messages_by_name();
+            db.sort_db_signals_by_name();
+            db.sort_all_node_fields();
+            db.sort_all_message_fields();
+            db.sort_all_signal_fields();
+            databases.push(db);
+        }
+    }
+
+    Ok(databases)
+}
+
+/// Converte un singolo `CAN-CLUSTER` in un [`DatabaseDBC`].
+fn build_can_database(cluster: &Element) -> Option<DatabaseDBC> {
+    let mut db: DatabaseDBC = DatabaseDBC {
+        name: cluster.item_name().unwrap_or_default(),
+        ..Default::default()
+    };
+
+    let ccc = cluster
+        .get_sub_element(ElementName::CanClusterVariants)
+        .and_then(|ccv| ccv.get_sub_element(ElementName::CanClusterConditional))?;
+
+    if ccc
+        .get_sub_element(ElementName::CanFdBaudrate)
+        .and_then(|elem| elem.character_data())
+        .is_some()
+    {
+        db.bustype = BusType::CanFd;
+    } else {
+        db.bustype = BusType::Can;
+    }
+
+    if let Some(channels) = ccc.get_sub_element(ElementName::PhysicalChannels) {
+        for phys_channel in channels
+            .sub_elements()
+            .filter(|se| se.element_name() == ElementName::CanPhysicalChannel)
+        {
+            if let Some(frame_triggerings) =
+                phys_channel.get_sub_element(ElementName::FrameTriggerings)
+            {
+                for ft in frame_triggerings.sub_elements() {
+                    process_can_frame_triggering(&mut db, &ft);
+                }
+            }
+        }
+    }
+
+    Some(db)
+}
+
+/// Estrae messaggio, segnali e relazioni da un `<CAN-FRAME-TRIGGERING>`.
+fn process_can_frame_triggering(db: &mut DatabaseDBC, frame_triggering: &Element) {
+    let frame = match frame_triggering
+        .get_sub_element(ElementName::FrameRef)
+        .and_then(|elem| elem.get_reference_target().ok())
+    {
+        Some(f) => f,
+        None => return,
+    };
+
+    let frame_name: String = frame.item_name().unwrap_or_else(|| "CAN_Frame".to_string());
+    let can_id: u32 = frame_triggering
+        .get_sub_element(ElementName::Identifier)
+        .and_then(|elem| elem.character_data())
+        .and_then(|cdata| cdata.parse_integer::<u32>())
+        .unwrap_or(0);
+    let byte_length: u16 = frame
+        .get_sub_element(ElementName::FrameLength)
+        .and_then(|elem| elem.character_data())
+        .and_then(|cdata| cdata.parse_integer::<u16>())
+        .unwrap_or(0);
+
+    let msg_key: MessageKey = ensure_message(db, &frame_name, can_id, byte_length);
+
+    // Sender/receiver nodes
+    let frame_ports: Vec<Element> = frame_triggering
+        .get_sub_element(ElementName::FramePortRefs)
+        .map(|elem| {
+            elem.sub_elements()
+                .filter(|se| se.element_name() == ElementName::FramePortRef)
+                .filter_map(|fpr| fpr.get_reference_target().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let (sender_ecus, receiver_ecus) = get_rx_tx_ecus(frame_ports);
+    for ecu in sender_ecus {
+        if let Some(nk) = ensure_node(db, &ecu) {
+            let _ = db.add_sender_relation(msg_key, nk);
+        }
+    }
+
+    // Signals mapped to this frame through its PDU mappings
+    if let Some(mappings) = frame.get_sub_element(ElementName::PduToFrameMappings) {
+        for pdu_mapping in mappings.sub_elements() {
+            if let Some(pdu) = pdu_mapping
+                .get_sub_element(ElementName::PduRef)
+                .and_then(|pduref| pduref.get_reference_target().ok())
+            {
+                collect_isignal_mappings(db, msg_key, &pdu, &receiver_ecus);
+            }
+        }
+    }
+}
+
+/// Converte un `<I-SIGNAL-I-PDU>` (o contenitori annidati) in segnali DBC.
+fn collect_isignal_mappings(
+    db: &mut DatabaseDBC,
+    msg_key: MessageKey,
+    pdu: &Element,
+    receiver_ecus: &[String],
+) {
+    for native_sender in native_senders_of_pdu(pdu) {
+        if let Some(nk) = ensure_node(db, &native_sender) {
+            let _ = db.add_sender_relation(msg_key, nk);
+        }
+    }
+
+    if pdu.element_name() == ElementName::ISignalIPdu {
+        process_isignal_ipdu(db, msg_key, pdu, receiver_ecus);
+    }
+}
+
+fn process_isignal_ipdu(
+    db: &mut DatabaseDBC,
+    msg_key: MessageKey,
+    pdu: &Element,
+    receiver_ecus: &[String],
+) {
+    let Some(mappings) = pdu.get_sub_element(ElementName::ISignalToPduMappings) else {
+        return;
+    };
+
+    for mapping in mappings.sub_elements() {
+        let Some(signal_elem) = mapping
+            .get_sub_element(ElementName::ISignalRef)
+            .and_then(|elem| elem.get_reference_target().ok())
+        else {
+            continue;
+        };
+
+        let sig_name: String = signal_elem.item_name().unwrap_or_default();
+        let bit_start: u16 = mapping
+            .get_sub_element(ElementName::StartPosition)
+            .and_then(|elem| elem.character_data())
+            .and_then(|cdata| cdata.parse_integer::<u16>())
+            .unwrap_or(0);
+        let bit_length: u16 = signal_elem
+            .get_sub_element(ElementName::Length)
+            .and_then(|elem| elem.character_data())
+            .and_then(|cdata| cdata.parse_integer::<u16>())
+            .unwrap_or(0);
+        let endian: Endianness = match mapping
+            .get_sub_element(ElementName::PackingByteOrder)
+            .and_then(|elem| elem.character_data())
+        {
+            Some(CharacterData::Enum(EnumItem::MostSignificantByteFirst)) => Endianness::Motorola,
+            Some(CharacterData::Enum(EnumItem::MostSignificantByteLast)) => Endianness::Intel,
+            Some(CharacterData::Enum(EnumItem::Opaque)) => Endianness::Intel, // treat opaque byte order as linear/Intel for fitting check
+            _ => Endianness::Motorola,
+        };
+
+        let min: f64 = 0.0;
+        let mut max: f64 = 0.0;
+        if bit_length > 0 {
+            // intervallo massimo assumendo segnale unsigned
+            let max_raw: u64 = if bit_length < 64 {
+                (1u64 << bit_length) - 1
+            } else {
+                u64::MAX
+            };
+            max = max_raw as f64;
+        }
+
+        let comment: Option<String> = extract_desc(&signal_elem);
+
+        let sig_key = db.add_signal(&sig_name, endian, Signess::Unsigned, 1.0, 0.0, min, max, "");
+        if let Some(signal) = db.get_sig_by_key_mut(sig_key) {
+            signal.bit_start = bit_start;
+            signal.bit_length = bit_length;
+            if let Some(desc) = comment {
+                signal.comment = desc;
+            }
+            signal.steps.clear();
+            signal.compile_inline();
+        }
+
+        if db
+            .add_msg_sig_relation(sig_key, msg_key, MuxRole::None, None)
+            .is_ok()
+        {
+            for ecu in receiver_ecus {
+                if let Some(nk) = ensure_node(db, ecu) {
+                    let _ = db.add_sig_receiver_node(sig_key, nk);
+                }
+            }
+        }
+    }
+}
+
+/// Ricava le ECU trasmettenti/riceventi dai `<FRAME-PORT-REF>`.
+fn get_rx_tx_ecus(frame_ports: Vec<Element>) -> (Vec<String>, Vec<String>) {
+    let mut sender_ecus = Vec::new();
+    let mut receiver_ecus = Vec::new();
+    for fp in frame_ports {
+        if let Some(CharacterData::Enum(direction)) = fp
+            .get_sub_element(ElementName::CommunicationDirection)
+            .and_then(|elem| elem.character_data())
+        {
+            match direction {
+                EnumItem::In => {
+                    if let Some(name) = ecu_of_frame_port(&fp) {
+                        receiver_ecus.push(name);
+                    }
+                }
+                EnumItem::Out => {
+                    if let Some(name) = ecu_of_frame_port(&fp) {
+                        sender_ecus.push(name);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    (sender_ecus, receiver_ecus)
+}
+
+/// Risale l'arborescenza del frame port per ottenere il nome dell'ECU.
+fn ecu_of_frame_port(frame_port: &Element) -> Option<String> {
+    let ecu_comm_port_instance = frame_port.parent().ok()??;
+    let comm_connector = ecu_comm_port_instance.parent().ok()??;
+    let connectors = comm_connector.parent().ok()??;
+    let ecu_instance = connectors.parent().ok()??;
+    ecu_instance.item_name()
+}
+
+fn ensure_node(db: &mut DatabaseDBC, name: &str) -> Option<NodeKey> {
+    if let Some(nk) = db.get_node_key_by_name(name) {
+        return Some(nk);
+    }
+    match db.add_node(name) {
+        Ok(nk) => Some(nk),
+        Err(DatabaseError::NodeAlreadyExists { .. }) => db.get_node_key_by_name(name),
+        Err(_) => None,
+    }
+}
+
+fn ensure_message(db: &mut DatabaseDBC, name: &str, id: u32, dlc: u16) -> MessageKey {
+    if let Some(k) = db.get_msg_key_by_id(id) {
+        return k;
+    }
+    if let Some(k) = db.get_msg_key_by_name(name) {
+        return k;
+    }
+
+    match db.add_message(name, id, dlc) {
+        Ok(k) => k,
+        Err(_) => {
+            let fallback_name = format!("{name}_{id}");
+            db.add_message(&fallback_name, id, dlc)
+                .expect("fallback message creation failed")
+        }
+    }
+}
+
+fn native_senders_of_pdu(pdu: &Element) -> Vec<String> {
+    let Some(admin) = pdu.get_sub_element(ElementName::AdminData) else {
+        return Vec::new();
+    };
+    let Some(sdgs) = admin.get_sub_element(ElementName::Sdgs) else {
+        return Vec::new();
+    };
+
+    let mut senders: Vec<String> = Vec::new();
+
+    for sdg in sdgs
+        .sub_elements()
+        .filter(|se| se.element_name() == ElementName::Sdg)
+    {
+        let gid = sdg
+            .attribute_value(AttributeName::Gid)
+            .and_then(|cd| text_from_cdata(cd));
+        if gid.as_deref() != Some("NativeSender") {
+            continue;
+        }
+        for sd in sdg
+            .sub_elements()
+            .filter(|se| se.element_name() == ElementName::Sd)
+        {
+            let sd_gid = sd
+                .attribute_value(AttributeName::Gid)
+                .and_then(|cd| text_from_cdata(cd));
+            if sd_gid.as_deref() != Some("ECU") {
+                continue;
+            }
+            if let Some(CharacterData::String(ecu_list)) = sd.character_data() {
+                for entry in ecu_list.split(',') {
+                    let trimmed = entry.trim();
+                    if !trimmed.is_empty() {
+                        senders.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    senders
+}
+
+fn extract_desc(elem: &Element) -> Option<String> {
+    let desc = elem.get_sub_element(ElementName::Desc)?;
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(text) = desc.character_data().and_then(text_from_cdata) {
+        parts.push(text);
+    }
+
+    for child in desc.sub_elements() {
+        if let Some(text) = child.character_data().and_then(text_from_cdata) {
+            parts.push(text);
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
+fn text_from_cdata(cdata: CharacterData) -> Option<String> {
+    match cdata {
+        CharacterData::String(s) => Some(s),
+        _ => None,
+    }
 }
