@@ -455,7 +455,8 @@ fn collect_isignal_mappings(
         }
     }
 
-    if pdu.element_name() == ElementName::ISignalIPdu {
+    if pdu.element_name() == ElementName::ISignalIPdu || pdu.element_name() == ElementName::NmPdu {
+        // NM-PDU condivide la stessa struttura di mapping degli I-SIGNAL-I-PDU
         process_isignal_ipdu(db, msg_key, pdu, receiver_ecus);
     } else if pdu.element_name() == ElementName::NPdu {
         process_npdu(db, msg_key, pdu);
@@ -468,7 +469,10 @@ fn process_isignal_ipdu(
     pdu: &Element,
     receiver_ecus: &[String],
 ) {
-    let Some(mappings) = pdu.get_sub_element(ElementName::ISignalToPduMappings) else {
+    let Some(mappings) = pdu
+        .get_sub_element(ElementName::ISignalToPduMappings)
+        .or_else(|| pdu.get_sub_element(ElementName::ISignalToIPduMappings))
+    else {
         return;
     };
 
