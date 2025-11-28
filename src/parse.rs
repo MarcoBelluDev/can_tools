@@ -457,6 +457,8 @@ fn collect_isignal_mappings(
 
     if pdu.element_name() == ElementName::ISignalIPdu {
         process_isignal_ipdu(db, msg_key, pdu, receiver_ecus);
+    } else if pdu.element_name() == ElementName::NPdu {
+        process_npdu(db, msg_key, pdu);
     }
 }
 
@@ -618,7 +620,7 @@ fn native_senders_of_pdu(pdu: &Element) -> Vec<String> {
     {
         let gid = sdg
             .attribute_value(AttributeName::Gid)
-            .and_then(|cd| text_from_cdata(cd));
+            .and_then(text_from_cdata);
         if gid.as_deref() != Some("NativeSender") {
             continue;
         }
@@ -628,7 +630,7 @@ fn native_senders_of_pdu(pdu: &Element) -> Vec<String> {
         {
             let sd_gid = sd
                 .attribute_value(AttributeName::Gid)
-                .and_then(|cd| text_from_cdata(cd));
+                .and_then(text_from_cdata);
             if sd_gid.as_deref() != Some("ECU") {
                 continue;
             }
@@ -672,4 +674,55 @@ fn text_from_cdata(cdata: CharacterData) -> Option<String> {
         CharacterData::String(s) => Some(s),
         _ => None,
     }
+}
+
+fn process_npdu(db: &mut DatabaseDBC, msg_key: MessageKey, pdu: &Element) {
+    let msg_name = db
+        .get_message_by_key(msg_key)
+        .map(|m| m.name.clone())
+        .unwrap_or_else(|| pdu.item_name().unwrap_or_default());
+
+    let msg_dlc: u16 = db
+        .get_message_by_key(msg_key)
+        .map(|m| m.byte_length)
+        .unwrap_or(0);
+
+    let pdu_len_bytes: u16 = pdu
+        .get_sub_element(ElementName::Length)
+        .and_then(|elem| elem.character_data())
+        .and_then(|cdata| cdata.parse_integer::<u16>())
+        .unwrap_or(msg_dlc);
+
+    let byte_len: u16 = if pdu_len_bytes > 0 {
+        pdu_len_bytes
+    } else {
+        msg_dlc
+    };
+    let bit_length: u16 = byte_len.saturating_mul(8);
+    let max: f64 = if bit_length == 0 {
+        0.0
+    } else if bit_length < 64 {
+        ((1u64 << bit_length) - 1) as f64
+    } else {
+        u64::MAX as f64
+    };
+
+    let sig_key = db.add_signal(
+        &msg_name,
+        Endianness::Intel,
+        Signess::Unsigned,
+        1.0,
+        0.0,
+        0.0,
+        max,
+        "",
+    );
+    if let Some(signal) = db.get_sig_by_key_mut(sig_key) {
+        signal.bit_start = 0;
+        signal.bit_length = bit_length;
+        signal.steps.clear();
+        signal.compile_inline();
+    }
+
+    let _ = db.add_msg_sig_relation(sig_key, msg_key, MuxRole::None, None);
 }
