@@ -1,10 +1,10 @@
 use crate::core::strings::collect_all_quoted;
 use crate::types::{
     attributes::{AttrValueType, AttributeSpec},
-    database::DatabaseDBC,
+    database::CanDatabase,
 };
 
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     // Expected formats (relational attribute definitions):
     // BA_DEF_REL_ BU_SG_REL_  "GenSigTimeoutTime" INT 0 65535;
     // BA_DEF_REL_ BU_BO_REL_  "GenMsgTimeoutTime" INT 0 65535;

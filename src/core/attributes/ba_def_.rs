@@ -1,10 +1,10 @@
 use crate::core::strings::collect_all_quoted;
 use crate::types::{
     attributes::{AttrObject, AttrValueType, AttributeSpec},
-    database::DatabaseDBC,
+    database::CanDatabase,
 };
 
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     // Expected formats (global BA_ attributes):
     // BA_DEF_  "DBName" STRING;
     // BA_DEF_  "Baudrate" INT 1 1000000;

@@ -1,11 +1,11 @@
 use crate::types::{
-    database::{DatabaseDBC, SignalKey},
-    message::MessageDBC,
+    database::{CanDatabase, CanSignalKey},
+    message::CanMessage,
     signal::Signess,
 };
 
 /// `SIG_VALTYPE_ "MsgID" <SignalName> : <Value>;`
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
 
     // 1) "SIG_VALTYPE_"
@@ -41,8 +41,8 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
 
     // 6) assign the Sign property to specific sisignal
-    let sig_key_opt: Option<SignalKey> = {
-        let msg: &MessageDBC = match db.get_message_by_id(msg_id) {
+    let sig_key_opt: Option<CanSignalKey> = {
+        let msg: &CanMessage = match db.get_message_by_id(msg_id) {
             Some(m) => m,
             None => return,
         };

@@ -1,10 +1,10 @@
 use crate::types::{
     attributes::{AttrValueType, AttributeSpec, AttributeValue},
-    database::DatabaseDBC,
+    database::CanDatabase,
 };
 
 /// `BA_ "Attribute" BO_ <ID> <value>;`
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
 
     // 1) "BA_"

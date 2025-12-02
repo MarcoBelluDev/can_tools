@@ -1,6 +1,6 @@
-use crate::types::database::DatabaseDBC;
+use crate::types::database::CanDatabase;
 
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     // Expected formats:
     // CM_ "Comment regarding the network";
     let s: &str = line.trim_end_matches(';');

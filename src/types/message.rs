@@ -1,7 +1,7 @@
 use crate::types::{
     attributes::AttributeValue,
-    database::{DatabaseDBC, NodeKey, SignalKey},
-    signal::SignalDBC,
+    database::{CanDatabase, CanNodeKey, CanSignalKey},
+    signal::CanSignal,
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -14,7 +14,7 @@ use std::{
 /// the `name`, payload length (`byte_length`), and metadata such as `msgtype`, `cycle_time`,
 /// the transmitting nodes (`sender_nodes`), and the list of composing signals (`signals`).
 #[derive(Default, Clone, PartialEq, Debug)]
-pub struct MessageDBC {
+pub struct CanMessage {
     /// ID Format (Standard or Extended)
     pub id_format: IdFormat,
     /// Numeric CAN ID (base 10).
@@ -28,15 +28,15 @@ pub struct MessageDBC {
     /// Message type string (free-form from the DBC, defaults to `"CAN"` / `"CAN FD"` based on payload length).
     pub msgtype: String,
     /// Transmitting nodes (ECUs) for this message.
-    pub sender_nodes: Vec<NodeKey>,
+    pub sender_nodes: Vec<CanNodeKey>,
     /// Receiver nodes (ECUs) aggregated from all signals in this message.
-    pub receiver_nodes: Vec<NodeKey>,
+    pub receiver_nodes: Vec<CanNodeKey>,
     /// Signals that belong to this message.
-    pub signals: Vec<SignalKey>,
+    pub signals: Vec<CanSignalKey>,
     /// Associated comment (DBC `CM_ BO_` section).
     pub comment: String,
     /// List of multiplexor switch signals (primary first). Empty if none.
-    pub mux_multiplexors: Vec<SignalKey>,
+    pub mux_multiplexors: Vec<CanSignalKey>,
 
     // --- Message Attribute Entry ---
     pub attributes: BTreeMap<String, AttributeValue>,
@@ -44,17 +44,17 @@ pub struct MessageDBC {
     /// Fast lookup: for each Multiplexor -> for each selector -> signals gated by that selector.
     ///
     /// Example: mux_cases[Motor_MUX][Value(0)] = [Motor_status, Motor_Direction, ...]
-    pub mux_cases: HashMap<SignalKey, HashMap<MuxSelector, Vec<SignalKey>>>,
+    pub mux_cases: HashMap<CanSignalKey, HashMap<MuxSelector, Vec<CanSignalKey>>>,
 }
 
-impl MessageDBC {
+impl CanMessage {
     /// Resets all fields to their default values.
     pub fn clear(&mut self) {
-        *self = MessageDBC::default();
+        *self = CanMessage::default();
     }
 
-    /// Convenience iterator over the `SignalDBC`s belonging to this message.
-    pub fn signals<'a>(&'a self, db: &'a DatabaseDBC) -> impl Iterator<Item = &'a SignalDBC> + 'a {
+    /// Convenience iterator over the `CanSignal`s belonging to this message.
+    pub fn signals<'a>(&'a self, db: &'a CanDatabase) -> impl Iterator<Item = &'a CanSignal> + 'a {
         self.signals
             .iter()
             .filter_map(move |&key| db.get_sig_by_key(key))

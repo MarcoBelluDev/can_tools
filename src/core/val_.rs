@@ -1,9 +1,9 @@
-use crate::types::database::DatabaseDBC;
+use crate::types::database::CanDatabase;
 use std::collections::BTreeMap;
 
 /// Parse a VAL_ line that defines a value table for a specific signal:
 /// `VAL_ <MessageID> <SignalName> <value> "<desc>" ... ;`
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     let mut tokens = line.split_ascii_whitespace();
     if tokens.next().map(|s| s.to_ascii_lowercase()) != Some("val_".into()) {
         return;

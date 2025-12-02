@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::types::{
     attributes::AttrObject,
-    database::{MessageKey, NodeKey, SignalKey},
+    database::{CanMessageKey, CanNodeKey, CanSignalKey},
 };
 
 /// Errors produced while parsing a `.dbc` file.
@@ -92,15 +92,15 @@ pub enum DatabaseError {
     #[error("Node '{name}' already exists")]
     NodeAlreadyExists { name: String },
     #[error("Node not found for key {node_key:?}")]
-    NodeMissing { node_key: NodeKey },
+    NodeMissing { node_key: CanNodeKey },
     #[error("Message '{name}' already exists")]
     MessageAlreadyExists { name: String },
     #[error("Message ID {id_hex} already assigned to an existing message")]
     MessageIdAlreadyAssigned { id_hex: String },
     #[error("Message not found for key {message_key:?}")]
-    MessageMissing { message_key: MessageKey },
+    MessageMissing { message_key: CanMessageKey },
     #[error("Signal not found for key {signal_key:?}")]
-    SignalMissing { signal_key: SignalKey },
+    SignalMissing { signal_key: CanSignalKey },
     #[error("Signal '{signal}' is already associated with {associated_with}")]
     SignalAlreadyAssociated {
         signal: String,

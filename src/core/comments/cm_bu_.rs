@@ -1,8 +1,8 @@
-use crate::types::database::DatabaseDBC;
+use crate::types::database::CanDatabase;
 
 /// Parse a node-level comment:
 /// `CM_ BU_ NodeName "Comment..."`
-pub(crate) fn decode(db: &mut DatabaseDBC, text: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, text: &str) {
     let mut parts = text.split_ascii_whitespace();
     if parts.next() != Some("CM_") {
         return;

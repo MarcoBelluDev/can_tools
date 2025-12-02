@@ -1,30 +1,30 @@
 use crate::types::{
     attributes::AttributeValue,
-    database::{MessageKey, SignalKey},
+    database::{CanMessageKey, CanSignalKey},
 };
 use std::collections::BTreeMap;
 
 /// Node/ECU defined in the database.
 #[derive(Default, Clone, PartialEq, Debug)]
-pub struct NodeDBC {
+pub struct CanNode {
     /// Node/ECU name.
     pub name: String,
     /// Associated comment.
     pub comment: String,
     /// Messages transmitted by this node.
-    pub messages_sent: Vec<MessageKey>,
+    pub messages_sent: Vec<CanMessageKey>,
     /// Signals this node transmits (aggregated from the messages it sends).
-    pub tx_signals: Vec<SignalKey>,
+    pub tx_signals: Vec<CanSignalKey>,
     /// Signals this node receives.
-    pub rx_signals: Vec<SignalKey>,
+    pub rx_signals: Vec<CanSignalKey>,
 
     // --- Attributes ---
     pub attributes: BTreeMap<String, AttributeValue>,
 }
 
-impl NodeDBC {
+impl CanNode {
     /// Resets all fields to their default values.
     pub fn clear(&mut self) {
-        *self = NodeDBC::default();
+        *self = CanNode::default();
     }
 }

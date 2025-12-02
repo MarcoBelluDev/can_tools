@@ -1,10 +1,10 @@
 use chrono::{DateTime, Datelike, IsoWeek, Local, NaiveDate};
 
 use crate::types::attributes::{AttrObject, AttrValueType, AttributeSpec, AttributeValue};
-use crate::types::database::{BusType, DatabaseDBC};
+use crate::types::database::{BusType, CanDatabase};
 use crate::types::errors::DbcCreateError;
 
-/// Builds an empty `DatabaseDBC` populated with canonical metadata defaults.
+/// Builds an empty `CanDatabase` populated with canonical metadata defaults.
 ///
 /// Validates that `name` and `version` are non-empty, configures the appropriate bus
 /// attributes (including CAN FD baud rate support), and seeds the default date/version
@@ -15,7 +15,7 @@ pub fn new_database(
     name: &str,
     bustype: BusType,
     version: &str,
-) -> Result<DatabaseDBC, DbcCreateError> {
+) -> Result<CanDatabase, DbcCreateError> {
     if name.trim().is_empty() {
         return Err(DbcCreateError::EmptyDatabaseName);
     }
@@ -24,7 +24,7 @@ pub fn new_database(
     }
 
     // initialize the Database
-    let mut db: DatabaseDBC = DatabaseDBC {
+    let mut db: CanDatabase = CanDatabase {
         name: name.to_string(),
         bustype: bustype.clone(),
         version: version.to_string(),

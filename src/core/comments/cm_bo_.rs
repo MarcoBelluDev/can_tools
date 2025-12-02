@@ -1,7 +1,7 @@
-use crate::types::database::DatabaseDBC;
+use crate::types::database::CanDatabase;
 
 /// `CM_ BO_ <ID> "Comment...";`
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     let mut parts = line.split_ascii_whitespace();
     if parts.next() != Some("CM_") {
         return;

@@ -1,8 +1,8 @@
 use crate::types::{
     attributes::AttributeValue,
-    database::{DatabaseDBC, MessageKey, NodeKey, SignalKey},
+    database::{CanDatabase, CanMessageKey, CanNodeKey, CanSignalKey},
     message::{MuxRole, MuxSelector},
-    node::NodeDBC,
+    node::CanNode,
 };
 use std::cmp::Ordering;
 use std::{collections::BTreeMap, fmt};
@@ -25,9 +25,9 @@ pub(crate) struct Step {
 /// Describes position/bit-length, endianness, sign, scaling (factor/offset),
 /// valid range, unit of measure, value tables, and receiver nodes.
 #[derive(Default, Clone, PartialEq, Debug)]
-pub struct SignalDBC {
+pub struct CanSignal {
     /// Parent message key.
-    pub message: MessageKey,
+    pub message: CanMessageKey,
     /// Signal name.
     pub name: String,
     /// Bit start in the payload (bit 0 = LSB of the first byte).
@@ -49,7 +49,7 @@ pub struct SignalDBC {
     /// Unit of measure (normalized elsewhere by removing the optional `"Unit_"` prefix).
     pub unit_of_measurement: String,
     /// Receiver nodes.
-    pub receiver_nodes: Vec<NodeKey>,
+    pub receiver_nodes: Vec<CanNodeKey>,
     /// Associated comment (DBC `CM_ SG_` section).
     pub comment: String,
     /// Value-to-text mapping (value table).
@@ -61,7 +61,7 @@ pub struct SignalDBC {
     /// Optional group index (extended multiplexing). `0` if unused.
     pub mux_group: u8,
     /// For multiplexed signals, the controlling multiplexer switch.
-    pub mux_switch: Option<SignalKey>,
+    pub mux_switch: Option<CanSignalKey>,
     /// Selector for the multiplexer switch value/range (meaningful when multiplexed).
     pub mux_selector: MuxSelector,
 
@@ -76,7 +76,7 @@ pub struct SignalDBC {
     pub values: Vec<(f64, f64)>,
 }
 
-impl SignalDBC {
+impl CanSignal {
     const TIMESTAMP_MATCH_EPSILON: f64 = 1e-3;
 
     #[inline]
@@ -136,9 +136,9 @@ impl SignalDBC {
     /// Returns an immutable reference to a receiver node by name (case-insensitive).
     pub fn get_receiver_nodes_by_name<'a>(
         &self,
-        db: &'a DatabaseDBC,
+        db: &'a CanDatabase,
         name: &str,
-    ) -> Option<&'a NodeDBC> {
+    ) -> Option<&'a CanNode> {
         let key = name.to_lowercase();
         self.receiver_nodes
             .iter()
@@ -149,9 +149,9 @@ impl SignalDBC {
     /// Returns a mutable reference to a receiver node by name (case-insensitive).
     pub fn get_receiver_nodes_by_name_mut<'a>(
         &self,
-        db: &'a mut DatabaseDBC,
+        db: &'a mut CanDatabase,
         name: &str,
-    ) -> Option<&'a mut NodeDBC> {
+    ) -> Option<&'a mut CanNode> {
         let input_name: String = name.to_lowercase();
         let nkey = self.receiver_nodes.iter().copied().find(|&node_key| {
             db.get_node_by_key(node_key)
@@ -286,7 +286,7 @@ impl SignalDBC {
 
     /// Resets all fields to their default values.
     pub fn clear(&mut self) {
-        *self = SignalDBC::default();
+        *self = CanSignal::default();
     }
 }
 

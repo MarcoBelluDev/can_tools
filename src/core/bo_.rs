@@ -1,8 +1,8 @@
-use crate::types::database::DatabaseDBC;
+use crate::types::database::CanDatabase;
 
 /// Decode a `BO_` line robustly using `:` as separator between name and length.
 /// Accepts both: `BO_ 123 NAME: 8 Node` and `BO_ 123 NAME : 8 Node`.
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     let line: &str = line.trim();
     if !line.starts_with("BO_") {
         return;

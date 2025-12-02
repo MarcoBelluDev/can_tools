@@ -1,5 +1,5 @@
 use crate::types::{
-    database::{DatabaseDBC, MessageKey, NodeKey, SignalKey},
+    database::{CanDatabase, CanMessageKey, CanNodeKey, CanSignalKey},
     message::{MuxRole, MuxSelector},
     signal::{Endianness, Signess},
 };
@@ -7,7 +7,7 @@ use crate::types::{
 /// Decode a `SG_` line belonging to the **current message** (the last parsed BO_).
 /// Format (typical):
 /// SG_ <name> [M|mX]: <bit_start>|<bit_length>@<endian><sign> (<factor>,<offset>) [<min>|<max>] "<unit>" <receivers...>
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     if db.messages.is_empty() {
         return;
     }
@@ -143,7 +143,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
         .to_string();
 
     // 5) receivers (space-separated)
-    let mut receiver_nodes: Vec<NodeKey> = Vec::new();
+    let mut receiver_nodes: Vec<CanNodeKey> = Vec::new();
     let recv_opt: Option<&str> = it.next();
     if let Some(recv) = recv_opt {
         for node_name in recv.split(",") {
@@ -154,7 +154,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     }
 
     // create the signal
-    let sig_key: SignalKey = db.add_signal(&name, endian, sign, factor, offset, min, max, &unit);
+    let sig_key: CanSignalKey = db.add_signal(&name, endian, sign, factor, offset, min, max, &unit);
 
     // map bit_start and bit_length info
     let Some(signal) = db.get_sig_by_key_mut(sig_key) else {
@@ -163,14 +163,14 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     signal.bit_length = bit_length;
     signal.bit_start = bit_start;
 
-    // add NodeKeys to SignalDBC.receiver_nodes
-    // add SignalKeys to NodeDBC.signals_read
+    // add CanNodeKeys to SignalDBC.receiver_nodes
+    // add CanSignalKeys to NodeDBC.signals_read
     for node_key in receiver_nodes.iter().copied() {
         let _ = db.add_sig_receiver_node(sig_key, node_key);
     }
 
     // add Message relation and multiplexing info
-    let msg_key: MessageKey = match db.current_msg {
+    let msg_key: CanMessageKey = match db.current_msg {
         Some(k) => k,
         // Create a fallback message if an SG_ appears before any BO_ (rare).
         None => match db.add_message("_Independent_Signal_", 0, 8) {

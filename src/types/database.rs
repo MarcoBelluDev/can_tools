@@ -1,14 +1,14 @@
-//! DatabaseDBC model (SlotMap-backed).
+//! CanDatabase model (SlotMap-backed).
 //!
 //! This module defines the in-memory **CAN database** used by the DBC/ARXML parsers.
-//! Storage uses **SlotMap** arenas with **stable keys**: [`NodeKey`], [`MessageKey`], [`SignalKey`].
+//! Storage uses **SlotMap** arenas with **stable keys**: [`CanNodeKey`], [`CanMessageKey`], [`CanSignalKey`].
 //! Public iteration follows **order vectors** via `iter_nodes()`, `iter_messages()`, `iter_signals()`
 //! and you can reorder presentation with `sort_nodes_by_name()`, `sort_messages_by_name()`, `sort_signals_by_name()`.
 //!
 //! **Lookups** are normalized and O(1): `get_message_by_id/_hex/_name`, `get_node_by_name`, `get_signal_by_name`.
 //! Names are case-insensitive; hexadecimal IDs use uppercase `0x...` form.
 //!
-//! Signal decoding utilities live on [`SignalDBC`]: `compile_inline()`, `extract_raw_u64/i64()`.
+//! Signal decoding utilities live on [`CanSignal`]: `compile_inline()`, `extract_raw_u64/i64()`.
 //! Conversion to `SignalLog` is provided under `asc::core::signal_conversion` when the `asc` feature is enabled.
 //!
 //! Docs updated: 2025-10-09 — refreshed field documentation and clarified ordering invariants.
@@ -22,16 +22,16 @@ use crate::{
     types::{
         attributes::{AttrObject, AttrValueType, AttributeSpec, AttributeValue},
         errors::DatabaseError,
-        message::{IdFormat, MessageDBC, MuxRole, MuxSelector},
-        node::NodeDBC,
-        signal::{Endianness, SignalDBC, Signess},
+        message::{IdFormat, CanMessage, MuxRole, MuxSelector},
+        node::CanNode,
+        signal::{Endianness, CanSignal, Signess},
     },
 };
 
 // --- Stable keys (SlotMap) ---
-new_key_type! { pub struct NodeKey; }
-new_key_type! { pub struct MessageKey; }
-new_key_type! { pub struct SignalKey; }
+new_key_type! { pub struct CanNodeKey; }
+new_key_type! { pub struct CanMessageKey; }
+new_key_type! { pub struct CanSignalKey; }
 
 /// In-memory representation of a CAN database (DBC).
 ///
@@ -39,7 +39,7 @@ new_key_type! { pub struct SignalKey; }
 /// (SlotMaps with stable keys), optional order vectors to control iteration order, and
 /// several normalized lookup maps for efficient queries.
 #[derive(Default, Clone, Debug)]
-pub struct DatabaseDBC {
+pub struct CanDatabase {
     // --- General information ---
     /// Human-readable database name (`BA_ "DBName"`), empty if absent.
     pub name: String,
@@ -51,14 +51,14 @@ pub struct DatabaseDBC {
     pub comment: String,
 
     // --- Main storage (stable-key maps) ---
-    pub nodes: SlotMap<NodeKey, NodeDBC>,
-    pub messages: SlotMap<MessageKey, MessageDBC>,
-    pub signals: SlotMap<SignalKey, SignalDBC>,
+    pub nodes: SlotMap<CanNodeKey, CanNode>,
+    pub messages: SlotMap<CanMessageKey, CanMessage>,
+    pub signals: SlotMap<CanSignalKey, CanSignal>,
 
     // --- Order "views"  ---
-    pub nodes_order: Vec<NodeKey>,
-    pub messages_order: Vec<MessageKey>,
-    pub signals_order: Vec<SignalKey>,
+    pub nodes_order: Vec<CanNodeKey>,
+    pub messages_order: Vec<CanMessageKey>,
+    pub signals_order: Vec<CanSignalKey>,
 
     // --- DB Attribute Entry ---
     pub attributes: BTreeMap<String, AttributeValue>,
@@ -78,33 +78,33 @@ pub struct DatabaseDBC {
 
     // --- Lookups (case-normalized) ---
     /// Global map for nodes by (lower) name.
-    pub node_key_by_name: HashMap<String, NodeKey>, // lower(name) → NodeKey
+    pub node_key_by_name: HashMap<String, CanNodeKey>, // lower(name) → CanNodeKey
     /// Global map for messages by id.
-    pub msg_key_by_id: HashMap<u32, MessageKey>, // id10 → MessageKey
+    pub msg_key_by_id: HashMap<u32, CanMessageKey>, // id10 → CanMessageKey
     /// Global map for messages by id_hex.
-    pub msg_key_by_hex: HashMap<String, MessageKey>, // "0x...." uppercase → MessageKey
+    pub msg_key_by_hex: HashMap<String, CanMessageKey>, // "0x...." uppercase → CanMessageKey
     /// Global map for messages by (lower) name.
-    pub msg_key_by_name: HashMap<String, MessageKey>, // lower(name) → MessageKey
+    pub msg_key_by_name: HashMap<String, CanMessageKey>, // lower(name) → CanMessageKey
     /// Global map for signals by (lower) name. Beware of collisions if two BO_ have same SG_ name.
-    pub sig_key_by_name: HashMap<String, SignalKey>, // lower(name) → SignalKey
+    pub sig_key_by_name: HashMap<String, CanSignalKey>, // lower(name) → CanSignalKey
 
     // Parsing state: last message seen (used by SG_ decoder)
-    pub(crate) current_msg: Option<MessageKey>,
+    pub(crate) current_msg: Option<CanMessageKey>,
 
     // --- Relational Attributes (BA_REL_) ---
     // Concrete values attached to a pair of entities.
     // Attribute names are kept sorted (BTreeMap) for stable iteration.
     // Keys for pairs use HashMap since order is not important and SlotMap keys are hashable.
     /// BU_SG_REL_: attributes on (Node, Signal) pairs.
-    pub bu_sg_rel_attributes: HashMap<(NodeKey, SignalKey), BTreeMap<String, AttributeValue>>,
+    pub bu_sg_rel_attributes: HashMap<(CanNodeKey, CanSignalKey), BTreeMap<String, AttributeValue>>,
     /// BU_BO_REL_: attributes on (Node, Message) pairs.
-    pub bu_bo_rel_attributes: HashMap<(NodeKey, MessageKey), BTreeMap<String, AttributeValue>>,
+    pub bu_bo_rel_attributes: HashMap<(CanNodeKey, CanMessageKey), BTreeMap<String, AttributeValue>>,
 }
 
-impl DatabaseDBC {
+impl CanDatabase {
     // --------- Nodes --------
-    /// Adds a node to the database, seeding attributes with spec defaults, and returns the `NodeKey`.
-    pub fn add_node(&mut self, name: &str) -> Result<NodeKey, DatabaseError> {
+    /// Adds a node to the database, seeding attributes with spec defaults, and returns the `CanNodeKey`.
+    pub fn add_node(&mut self, name: &str) -> Result<CanNodeKey, DatabaseError> {
         // check that the node name is not already present
         if self.get_node_key_by_name(name).is_some() {
             return Err(DatabaseError::NodeAlreadyExists {
@@ -112,7 +112,7 @@ impl DatabaseDBC {
             });
         }
 
-        let mut node: NodeDBC = NodeDBC {
+        let mut node: CanNode = CanNode {
             name: name.to_string(),
             ..Default::default()
         };
@@ -127,10 +127,10 @@ impl DatabaseDBC {
                 .insert(attr_name.clone(), spec.default.clone());
         }
 
-        // create NodeKey and NodeDBC
-        let key: NodeKey = self.nodes.insert(node);
+        // create CanNodeKey and CanNode
+        let key: CanNodeKey = self.nodes.insert(node);
 
-        // push NodeKey in relevant variables
+        // push CanNodeKey in relevant variables
         self.nodes_order.push(key);
         self.node_key_by_name.insert(name.to_lowercase(), key);
         Ok(key)
@@ -139,10 +139,10 @@ impl DatabaseDBC {
     /// Link a sender node to a message, keeping both sides in sync.
     pub fn add_sender_relation(
         &mut self,
-        msg_key: MessageKey,
-        node_key: NodeKey,
+        msg_key: CanMessageKey,
+        node_key: CanNodeKey,
     ) -> Result<(), DatabaseError> {
-        let mut pending_tx: Vec<SignalKey>;
+        let mut pending_tx: Vec<CanSignalKey>;
         {
             let message =
                 self.get_message_by_key(msg_key)
@@ -153,7 +153,7 @@ impl DatabaseDBC {
                 .get_node_by_key(node_key)
                 .ok_or(DatabaseError::NodeMissing { node_key })?;
 
-            // signals of the Message that needs to be added as NodeDBC.tx_signals
+            // signals of the Message that needs to be added as CanNode.tx_signals
             pending_tx = message
                 .signals
                 .iter()
@@ -162,29 +162,29 @@ impl DatabaseDBC {
                 .collect();
         }
 
-        // check that a MessageDBC exist for given MessageKey
+        // check that a CanMessage exist for given CanMessageKey
         let Some(message) = self.get_message_by_key_mut(msg_key) else {
             return Err(DatabaseError::MessageMissing {
                 message_key: msg_key,
             });
         };
 
-        // add the NodeKey to MessageDBC if not already present
+        // add the CanNodeKey to CanMessage if not already present
         if !message.sender_nodes.contains(&node_key) {
             message.sender_nodes.push(node_key);
         }
 
-        // check that a NodeDBC exist for given NodeKey
+        // check that a CanNode exist for given CanNodeKey
         let Some(node) = self.get_node_by_key_mut(node_key) else {
             return Err(DatabaseError::NodeMissing { node_key });
         };
 
-        // add the MessageKey to NodeDBC if not already present
+        // add the CanMessageKey to CanNode if not already present
         if !node.messages_sent.contains(&msg_key) {
             node.messages_sent.push(msg_key);
         }
 
-        // add the SignalKeys missing from NodeDBC
+        // add the CanSignalKeys missing from CanNode
         for signal_key in pending_tx.drain(..) {
             node.tx_signals.push(signal_key);
         }
@@ -195,41 +195,41 @@ impl DatabaseDBC {
     /// Remove a message from a Sender Node, keeping both sides in sync.
     pub fn remove_sender_relation(
         &mut self,
-        msg_key: MessageKey,
-        node_key: NodeKey,
+        msg_key: CanMessageKey,
+        node_key: CanNodeKey,
     ) -> Result<(), DatabaseError> {
-        let mut to_prune: Vec<SignalKey>;
+        let mut to_prune: Vec<CanSignalKey>;
         {
             let message =
                 self.get_message_by_key(msg_key)
                     .ok_or(DatabaseError::MessageMissing {
                         message_key: msg_key,
                     })?;
-            // signals of the Message that needs to be removed as NodeDBC.tx_signals
+            // signals of the Message that needs to be removed as CanNode.tx_signals
             to_prune = message.signals.to_vec();
         }
 
         {
-            // check that a MessageDBC exist for given MessageKey
+            // check that a CanMessage exist for given CanMessageKey
             let Some(message) = self.get_message_by_key_mut(msg_key) else {
                 return Err(DatabaseError::MessageMissing {
                     message_key: msg_key,
                 });
             };
-            // remove the NodeKey from MessageDBC.sender_nodes
+            // remove the CanNodeKey from CanMessage.sender_nodes
             message.sender_nodes.retain(|x| x != &node_key);
         }
 
-        // check that a NodeDBC exist for given NodeKey
+        // check that a CanNode exist for given CanNodeKey
         let Some(node) = self.get_node_by_key_mut(node_key) else {
             return Err(DatabaseError::NodeMissing { node_key });
         };
 
         node.messages_sent.retain(|x| x != &msg_key);
 
-        // remove the SignalKeys from NodeDBC.tx_signals
+        // remove the CanSignalKeys from CanNode.tx_signals
         if !to_prune.is_empty() {
-            let prune_set: HashSet<SignalKey> = to_prune.drain(..).collect();
+            let prune_set: HashSet<CanSignalKey> = to_prune.drain(..).collect();
             node.tx_signals.retain(|sig| !prune_set.contains(sig));
         }
 
@@ -238,8 +238,8 @@ impl DatabaseDBC {
 
     /// Create a new Node from an existing one adding "_copy" to the name
     /// Messages and Signals are modified to include new node relations
-    pub fn copy_node(&mut self, source_node_key: NodeKey) -> Result<NodeKey, DatabaseError> {
-        let new_node: NodeDBC = {
+    pub fn copy_node(&mut self, source_node_key: CanNodeKey) -> Result<CanNodeKey, DatabaseError> {
+        let new_node: CanNode = {
             // check that the source node key correspond to a Node
             let Some(node) = self.get_node_by_key(source_node_key) else {
                 return Err(DatabaseError::NodeMissing {
@@ -254,14 +254,14 @@ impl DatabaseDBC {
                 new_name = format!("{}_copy{}", &node.name, copy_counter);
                 copy_counter += 1;
             }
-            let mut cloned: NodeDBC = node.clone();
+            let mut cloned: CanNode = node.clone();
             cloned.name = new_name;
             cloned
         };
 
         // Collect current relations to refresh after the insertion
-        let messages_sent: Vec<MessageKey> = new_node.messages_sent.clone();
-        let rx_signals: Vec<SignalKey> = new_node.rx_signals.clone();
+        let messages_sent: Vec<CanMessageKey> = new_node.messages_sent.clone();
+        let rx_signals: Vec<CanSignalKey> = new_node.rx_signals.clone();
 
         // Validate that related messages still exist
         for &msg_key in &messages_sent {
@@ -273,7 +273,7 @@ impl DatabaseDBC {
         }
 
         // Gather signal/message pairs; ensure the message is still present
-        let mut signal_message_pairs: Vec<(SignalKey, MessageKey)> =
+        let mut signal_message_pairs: Vec<(CanSignalKey, CanMessageKey)> =
             Vec::with_capacity(rx_signals.len());
         for &sig_key in &rx_signals {
             let Some(signal) = self.get_sig_by_key(sig_key) else {
@@ -290,7 +290,7 @@ impl DatabaseDBC {
         }
 
         let new_name_lower = new_node.name.to_lowercase();
-        let new_key: NodeKey = self.nodes.insert(new_node);
+        let new_key: CanNodeKey = self.nodes.insert(new_node);
         self.nodes_order.push(new_key);
         self.node_key_by_name.insert(new_name_lower, new_key);
 
@@ -327,8 +327,8 @@ impl DatabaseDBC {
     }
 
     /// Deletes the node identified by `node_key`, removing every reference across the database.
-    pub fn delete_node(&mut self, node_key: NodeKey) -> Result<(), DatabaseError> {
-        let removed_node: NodeDBC = self
+    pub fn delete_node(&mut self, node_key: CanNodeKey) -> Result<(), DatabaseError> {
+        let removed_node: CanNode = self
             .nodes
             .remove(node_key)
             .ok_or(DatabaseError::NodeMissing { node_key })?;
@@ -355,30 +355,30 @@ impl DatabaseDBC {
         Ok(())
     }
 
-    /// Looks up the `NodeKey` for a given node name (case-insensitive).
-    pub fn get_node_key_by_name(&self, name: &str) -> Option<NodeKey> {
+    /// Looks up the `CanNodeKey` for a given node name (case-insensitive).
+    pub fn get_node_key_by_name(&self, name: &str) -> Option<CanNodeKey> {
         self.node_key_by_name.get(&name.to_lowercase()).copied()
     }
 
     /// Returns an immutable reference to the node addressed by the supplied key.
-    pub fn get_node_by_key(&self, key: NodeKey) -> Option<&NodeDBC> {
+    pub fn get_node_by_key(&self, key: CanNodeKey) -> Option<&CanNode> {
         self.nodes.get(key)
     }
 
     /// Returns a mutable reference to the node addressed by the supplied key.
-    pub fn get_node_by_key_mut(&mut self, key: NodeKey) -> Option<&mut NodeDBC> {
+    pub fn get_node_by_key_mut(&mut self, key: CanNodeKey) -> Option<&mut CanNode> {
         self.nodes.get_mut(key)
     }
 
-    /// Returns a `&NodeDBC` given the name (case-insensitive).
-    pub fn get_node_by_name(&self, name: &str) -> Option<&NodeDBC> {
-        let key: NodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
+    /// Returns a `&CanNode` given the name (case-insensitive).
+    pub fn get_node_by_name(&self, name: &str) -> Option<&CanNode> {
+        let key: CanNodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
         self.get_node_by_key(key)
     }
 
-    /// Returns a `&mut NodeDBC` given the name (case-insensitive).
-    pub fn get_node_by_name_mut(&mut self, name: &str) -> Option<&mut NodeDBC> {
-        let key: NodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
+    /// Returns a `&mut CanNode` given the name (case-insensitive).
+    pub fn get_node_by_name_mut(&mut self, name: &str) -> Option<&mut CanNode> {
+        let key: CanNodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
         self.get_node_by_key_mut(key)
     }
 
@@ -389,7 +389,7 @@ impl DatabaseDBC {
         name: &str,
         id: u32,
         byte_length: u16,
-    ) -> Result<MessageKey, DatabaseError> {
+    ) -> Result<CanMessageKey, DatabaseError> {
         // check if message with provided name already exist
         if let Some(r) = self.get_msg_key_by_name(name) {
             self.current_msg = Some(r); // set found message as current_msg
@@ -413,7 +413,7 @@ impl DatabaseDBC {
             IdFormat::Standard
         };
 
-        let mut message: MessageDBC = MessageDBC {
+        let mut message: CanMessage = CanMessage {
             id_format,
             id,
             id_hex: id_hex.clone(),
@@ -438,7 +438,7 @@ impl DatabaseDBC {
                 .insert(attr_name.clone(), spec.default.clone());
         }
 
-        let msg_key: MessageKey = self.messages.insert(message);
+        let msg_key: CanMessageKey = self.messages.insert(message);
 
         self.messages_order.push(msg_key);
 
@@ -451,8 +451,8 @@ impl DatabaseDBC {
     }
 
     /// Deletes the Message identified by `msg_key`, removing every reference across the database.
-    pub fn delete_message(&mut self, msg_key: MessageKey) -> Result<(), DatabaseError> {
-        let removed_msg: MessageDBC =
+    pub fn delete_message(&mut self, msg_key: CanMessageKey) -> Result<(), DatabaseError> {
+        let removed_msg: CanMessage =
             self.messages
                 .remove(msg_key)
                 .ok_or(DatabaseError::MessageMissing {
@@ -479,7 +479,7 @@ impl DatabaseDBC {
         // remove the Message from the signal.message
         for (_sig_key, signal) in self.signals.iter_mut() {
             if signal.message == msg_key {
-                signal.message = MessageKey::default();
+                signal.message = CanMessageKey::default();
             }
         }
 
@@ -490,8 +490,8 @@ impl DatabaseDBC {
     /// Inside Signals will be copied too.
     pub fn copy_message(
         &mut self,
-        source_msg_key: MessageKey,
-    ) -> Result<MessageKey, DatabaseError> {
+        source_msg_key: CanMessageKey,
+    ) -> Result<CanMessageKey, DatabaseError> {
         // check that the source message key correspond to a Message
         let (src_name, src_id, src_byte_len, src_comment, src_attrs, src_sender_nodes, src_signals) = {
             let source_msg =
@@ -524,7 +524,7 @@ impl DatabaseDBC {
             new_id += 1;
         }
 
-        let new_msg_key: MessageKey = self.add_message(&new_name, new_id, src_byte_len)?;
+        let new_msg_key: CanMessageKey = self.add_message(&new_name, new_id, src_byte_len)?;
         let Some(new_msg) = self.get_message_by_key_mut(new_msg_key) else {
             return Err(DatabaseError::InconsistentState {
                 details: "newly created message missing",
@@ -536,7 +536,7 @@ impl DatabaseDBC {
         new_msg.attributes = src_attrs;
 
         // useful info from old_signals
-        let useful_sig_info: Vec<(SignalKey, MuxRole, Option<MuxSelector>)> = src_signals
+        let useful_sig_info: Vec<(CanSignalKey, MuxRole, Option<MuxSelector>)> = src_signals
             .iter()
             .filter_map(|&old_sk| {
                 let s = self.get_sig_by_key(old_sk)?;
@@ -565,73 +565,73 @@ impl DatabaseDBC {
         Ok(new_msg_key)
     }
 
-    /// Looks up the `MessageKey` from a case-insensitive message name.
-    pub fn get_msg_key_by_name(&self, name: &str) -> Option<MessageKey> {
+    /// Looks up the `CanMessageKey` from a case-insensitive message name.
+    pub fn get_msg_key_by_name(&self, name: &str) -> Option<CanMessageKey> {
         self.msg_key_by_name.get(&name.to_lowercase()).copied()
     }
 
-    /// Looks up the `MessageKey` by numeric CAN identifier.
-    pub fn get_msg_key_by_id(&self, id: u32) -> Option<MessageKey> {
+    /// Looks up the `CanMessageKey` by numeric CAN identifier.
+    pub fn get_msg_key_by_id(&self, id: u32) -> Option<CanMessageKey> {
         self.msg_key_by_id.get(&id).copied()
     }
 
-    /// Looks up the `MessageKey` by hexadecimal CAN identifier.
-    pub fn get_msg_key_by_id_hex(&self, id_hex: &str) -> Option<MessageKey> {
+    /// Looks up the `CanMessageKey` by hexadecimal CAN identifier.
+    pub fn get_msg_key_by_id_hex(&self, id_hex: &str) -> Option<CanMessageKey> {
         // let key: String = normalize_id_hex(id_hex); // "0x...UPPERCASE"
         self.msg_key_by_hex.get(id_hex).copied()
     }
 
     /// Returns an immutable reference to a message given its key.
-    pub fn get_message_by_key(&self, key: MessageKey) -> Option<&MessageDBC> {
+    pub fn get_message_by_key(&self, key: CanMessageKey) -> Option<&CanMessage> {
         self.messages.get(key)
     }
 
     /// Returns a mutable reference to a message given its key.
-    pub fn get_message_by_key_mut(&mut self, key: MessageKey) -> Option<&mut MessageDBC> {
+    pub fn get_message_by_key_mut(&mut self, key: CanMessageKey) -> Option<&mut CanMessage> {
         self.messages.get_mut(key)
     }
 
-    /// Returns a `&MessageDBC` given the numeric CAN ID.
-    pub fn get_message_by_id(&self, id: u32) -> Option<&MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_id(id)?;
+    /// Returns a `&CanMessage` given the numeric CAN ID.
+    pub fn get_message_by_id(&self, id: u32) -> Option<&CanMessage> {
+        let key: CanMessageKey = self.get_msg_key_by_id(id)?;
         self.get_message_by_key(key)
     }
 
-    /// Returns a `&mut MessageDBC` given the numeric CAN ID.
-    pub fn get_message_by_id_mut(&mut self, id: u32) -> Option<&mut MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_id(id)?;
+    /// Returns a `&mut CanMessage` given the numeric CAN ID.
+    pub fn get_message_by_id_mut(&mut self, id: u32) -> Option<&mut CanMessage> {
+        let key: CanMessageKey = self.get_msg_key_by_id(id)?;
         self.get_message_by_key_mut(key)
     }
 
-    /// Returns a `&MessageDBC` given a hexadecimal ID (case-insensitive).
+    /// Returns a `&CanMessage` given a hexadecimal ID (case-insensitive).
     ///
     /// The argument may come in various forms, e.g., `"12dd54e3"`, `"0x12dd54e3"`, `"12DD54E3x"`;
     /// it will be normalized internally to `"0x12DD54E3"`.
-    pub fn get_message_by_id_hex(&self, id_hex: &str) -> Option<&MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_id_hex(id_hex)?;
+    pub fn get_message_by_id_hex(&self, id_hex: &str) -> Option<&CanMessage> {
+        let key: CanMessageKey = self.get_msg_key_by_id_hex(id_hex)?;
         self.get_message_by_key(key)
     }
 
-    /// Returns a `&mut MessageDBC` given a hexadecimal ID (case-insensitive).
-    pub fn get_message_by_id_hex_mut(&mut self, id_hex: &str) -> Option<&mut MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_id_hex(id_hex)?;
+    /// Returns a `&mut CanMessage` given a hexadecimal ID (case-insensitive).
+    pub fn get_message_by_id_hex_mut(&mut self, id_hex: &str) -> Option<&mut CanMessage> {
+        let key: CanMessageKey = self.get_msg_key_by_id_hex(id_hex)?;
         self.get_message_by_key_mut(key)
     }
 
-    /// Returns a `&MessageDBC` given the name (case-insensitive).
-    pub fn get_message_by_name(&self, name: &str) -> Option<&MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_name(name)?;
+    /// Returns a `&CanMessage` given the name (case-insensitive).
+    pub fn get_message_by_name(&self, name: &str) -> Option<&CanMessage> {
+        let key: CanMessageKey = self.get_msg_key_by_name(name)?;
         self.get_message_by_key(key)
     }
 
-    /// Returns a `&mut MessageDBC` given the name (case-insensitive).
-    pub fn get_message_by_name_mut(&mut self, name: &str) -> Option<&mut MessageDBC> {
-        let key: MessageKey = self.get_msg_key_by_name(name)?;
+    /// Returns a `&mut CanMessage` given the name (case-insensitive).
+    pub fn get_message_by_name_mut(&mut self, name: &str) -> Option<&mut CanMessage> {
+        let key: CanMessageKey = self.get_msg_key_by_name(name)?;
         self.get_message_by_key_mut(key)
     }
 
     // -------------- Signals ------------
-    /// Adds a signal to the database and returns the corresponding `SignalKey`.
+    /// Adds a signal to the database and returns the corresponding `CanSignalKey`.
     #[allow(clippy::too_many_arguments)]
     pub fn add_signal(
         &mut self,
@@ -643,8 +643,8 @@ impl DatabaseDBC {
         min: f64,
         max: f64,
         unit: &str,
-    ) -> SignalKey {
-        let mut sig: SignalDBC = SignalDBC {
+    ) -> CanSignalKey {
+        let mut sig: CanSignal = CanSignal {
             name: name.to_string(),
             endian,
             sign,
@@ -667,7 +667,7 @@ impl DatabaseDBC {
                 .insert(attr_name.clone(), spec.default.clone());
         }
 
-        let sig_key: SignalKey = self.signals.insert(sig);
+        let sig_key: CanSignalKey = self.signals.insert(sig);
         self.signals_order.push(sig_key);
         self.sig_key_by_name.insert(name.to_lowercase(), sig_key);
 
@@ -675,8 +675,8 @@ impl DatabaseDBC {
     }
 
     /// Deletes the Signal identified by `sig_key`, removing every reference across the database.
-    pub fn delete_signal(&mut self, sig_key: SignalKey) -> Result<(), DatabaseError> {
-        let removed_sig: SignalDBC =
+    pub fn delete_signal(&mut self, sig_key: CanSignalKey) -> Result<(), DatabaseError> {
+        let removed_sig: CanSignal =
             self.signals
                 .remove(sig_key)
                 .ok_or(DatabaseError::SignalMissing {
@@ -708,8 +708,8 @@ impl DatabaseDBC {
     /// Associates an additional receiver node with an existing signal, keeping both sides in sync.
     pub fn add_sig_receiver_node(
         &mut self,
-        sig_key: SignalKey,
-        node_key: NodeKey,
+        sig_key: CanSignalKey,
+        node_key: CanNodeKey,
     ) -> Result<(), DatabaseError> {
         let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
             return Err(DatabaseError::SignalMissing {
@@ -717,9 +717,9 @@ impl DatabaseDBC {
             });
         };
 
-        let msg_key: MessageKey = signal.message;
+        let msg_key: CanMessageKey = signal.message;
 
-        // add the NodeKey to SignalDBC if not already present
+        // add the CanNodeKey to CanSignal if not already present
         if !signal.receiver_nodes.contains(&node_key) {
             signal.receiver_nodes.push(node_key);
         }
@@ -728,19 +728,19 @@ impl DatabaseDBC {
             return Err(DatabaseError::NodeMissing { node_key });
         };
 
-        // add the SignalKey to NodeDBC if not already present
+        // add the CanSignalKey to CanNode if not already present
         if !node.rx_signals.contains(&sig_key) {
             node.rx_signals.push(sig_key);
         }
 
-        // check that the MessageDBC containing SignalKey contains NodeKey as receiver
+        // check that the CanMessage containing CanSignalKey contains CanNodeKey as receiver
         let Some(message) = self.get_message_by_key_mut(msg_key) else {
             return Err(DatabaseError::MessageMissing {
                 message_key: msg_key,
             });
         };
 
-        // add the NodeKey to MessageDBC if not already present
+        // add the CanNodeKey to CanMessage if not already present
         if !message.receiver_nodes.contains(&node_key) {
             message.receiver_nodes.push(node_key);
         }
@@ -751,8 +751,8 @@ impl DatabaseDBC {
     /// Remove a receiver node from an existing signal, keeping both sides in sync.
     pub fn remove_sig_receiver_node(
         &mut self,
-        sig_key: SignalKey,
-        node_key: NodeKey,
+        sig_key: CanSignalKey,
+        node_key: CanNodeKey,
     ) -> Result<(), DatabaseError> {
         let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
             return Err(DatabaseError::SignalMissing {
@@ -760,19 +760,19 @@ impl DatabaseDBC {
             });
         };
 
-        let msg_key: MessageKey = signal.message;
+        let msg_key: CanMessageKey = signal.message;
 
-        // remove the NodeKey from SignalDBC.receiver_nodes
+        // remove the CanNodeKey from CanSignal.receiver_nodes
         signal.receiver_nodes.retain(|x| x != &node_key);
 
         let Some(node) = self.get_node_by_key_mut(node_key) else {
             return Err(DatabaseError::NodeMissing { node_key });
         };
 
-        // remove the SignalKey from NodeDBC.rx_signals
+        // remove the CanSignalKey from CanNode.rx_signals
         node.rx_signals.retain(|x| x != &sig_key);
 
-        // check if the NodeKey still has some signal from the MessageDBC
+        // check if the CanNodeKey still has some signal from the CanMessage
         let still_receives_any_from_msg: bool = {
             let Some(node) = self.get_node_by_key(node_key) else {
                 return Err(DatabaseError::NodeMissing { node_key });
@@ -785,7 +785,7 @@ impl DatabaseDBC {
             })
         };
 
-        // if there are no more signals from that MessageDBC, remove the Nodekey as receiver of it
+        // if there are no more signals from that CanMessage, remove the CanNodeKey as receiver of it
         if !still_receives_any_from_msg {
             let Some(message) = self.get_message_by_key_mut(msg_key) else {
                 return Err(DatabaseError::MessageMissing {
@@ -801,7 +801,7 @@ impl DatabaseDBC {
     /// Removes a single entry from a signal's value table (if present).
     pub fn remove_value_table_entry(
         &mut self,
-        sig_key: SignalKey,
+        sig_key: CanSignalKey,
         entry: i32,
     ) -> Result<(), DatabaseError> {
         let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
@@ -823,7 +823,7 @@ impl DatabaseDBC {
     /// Adds or replaces a value table entry for the given signal.
     pub fn add_value_table_entry(
         &mut self,
-        sig_key: SignalKey,
+        sig_key: CanSignalKey,
         entry: i32,
         description: &str,
     ) -> Result<(), DatabaseError> {
@@ -853,12 +853,12 @@ impl DatabaseDBC {
     /// Binds a signal to a message, configuring its layout and multiplexing metadata.
     pub fn add_msg_sig_relation(
         &mut self,
-        sig_key: SignalKey,
-        msg_key: MessageKey,
+        sig_key: CanSignalKey,
+        msg_key: CanMessageKey,
         mux_role: MuxRole,
         mux_selector: Option<MuxSelector>,
-    ) -> Result<SignalKey, DatabaseError> {
-        // check if the SignalDBC is already associated to a MessageDBC
+    ) -> Result<CanSignalKey, DatabaseError> {
+        // check if the CanSignal is already associated to a CanMessage
         let Some(signal) = self.get_sig_by_key(sig_key) else {
             return Err(DatabaseError::SignalMissing {
                 signal_key: sig_key,
@@ -867,7 +867,7 @@ impl DatabaseDBC {
         let bit_start: u16 = signal.bit_start;
         let bit_length: u16 = signal.bit_length;
         if !signal.message.is_null() {
-            let mkey: MessageKey = signal.message;
+            let mkey: CanMessageKey = signal.message;
             let associated_with = if let Some(message) = self.get_message_by_key(mkey) {
                 format!("message '{}' (ID {})", message.name, message.id_hex)
             } else {
@@ -889,8 +889,8 @@ impl DatabaseDBC {
         let endianness: Endianness = signal.endian.clone();
         message_layout::check_signal_fits(dlc, bit_start, bit_length, endianness)?;
 
-        // if SignalDBC is Multiplexed, try to guess the Multiplexor if there is only one in the message
-        let inferred_switch: Option<SignalKey> = if mux_role == MuxRole::Multiplexed {
+        // if CanSignal is Multiplexed, try to guess the Multiplexor if there is only one in the message
+        let inferred_switch: Option<CanSignalKey> = if mux_role == MuxRole::Multiplexed {
             self.get_message_by_key(msg_key).and_then(|msg| {
                 if msg.mux_multiplexors.len() == 1 {
                     Some(msg.mux_multiplexors[0])
@@ -902,8 +902,8 @@ impl DatabaseDBC {
             None
         };
 
-        // We'll need receiver_nodes later to aggregate into MessageDBC.receiver_nodes
-        let msg_receivers: Vec<NodeKey> = {
+        // We'll need receiver_nodes later to aggregate into CanMessage.receiver_nodes
+        let msg_receivers: Vec<CanNodeKey> = {
             let Some(signal) = self.get_sig_by_key_mut(sig_key) else {
                 return Err(DatabaseError::SignalMissing {
                     signal_key: sig_key,
@@ -950,9 +950,9 @@ impl DatabaseDBC {
         }
 
         // Also back-link: for each sender node of this message, mark this signal as sent
-        // This keeps NodeDBC.tx_signals consistent when the transmitter is specified on BO_
+        // This keeps CanNode.tx_signals consistent when the transmitter is specified on BO_
         // and SG_ lines are parsed afterwards (common case without BO_TX_BU_ lines).
-        let sender_nodes: Vec<NodeKey> = self
+        let sender_nodes: Vec<CanNodeKey> = self
             .get_message_by_key(msg_key)
             .map(|m| m.sender_nodes.clone())
             .unwrap_or_default();
@@ -977,7 +977,7 @@ impl DatabaseDBC {
 
                 // link dependant signals with no Multiplexor yet to this new Multiplexor
                 // Usually, this should never happen because Multiplexor must always be first line in a message
-                let dep_to_attach: Vec<(SignalKey, MuxSelector)> = {
+                let dep_to_attach: Vec<(CanSignalKey, MuxSelector)> = {
                     let Some(msg) = self.get_message_by_key(msg_key) else {
                         return Err(DatabaseError::MessageMissingDuringMultiplexing);
                     };
@@ -985,7 +985,7 @@ impl DatabaseDBC {
                         .iter()
                         .copied()
                         .filter_map(|sk| {
-                            let s: &SignalDBC = self.get_sig_by_key(sk)?;
+                            let s: &CanSignal = self.get_sig_by_key(sk)?;
                             if s.mux_role == MuxRole::Multiplexed && s.mux_switch.is_none() {
                                 Some((sk, s.mux_selector.clone()))
                             } else {
@@ -1030,8 +1030,8 @@ impl DatabaseDBC {
     /// Detaches a signal from a message, reversing [`Self::add_msg_sig_relation`].
     pub fn remove_msg_sig_relation(
         &mut self,
-        sig_key: SignalKey,
-        msg_key: MessageKey,
+        sig_key: CanSignalKey,
+        msg_key: CanMessageKey,
     ) -> Result<(), DatabaseError> {
         // Ensure the message exists.
         self.get_message_by_key(msg_key)
@@ -1040,7 +1040,7 @@ impl DatabaseDBC {
             })?;
 
         // Snapshot the signal state and verify that it is bound to the target message.
-        let mux_snapshot: Option<(MuxRole, Option<SignalKey>, MuxSelector)> = {
+        let mux_snapshot: Option<(MuxRole, Option<CanSignalKey>, MuxSelector)> = {
             let signal = self
                 .get_sig_by_key(sig_key)
                 .ok_or(DatabaseError::SignalMissing {
@@ -1071,7 +1071,7 @@ impl DatabaseDBC {
             }
         };
 
-        let mut multiplexed_to_detach: Vec<SignalKey> = Vec::new();
+        let mut multiplexed_to_detach: Vec<CanSignalKey> = Vec::new();
 
         {
             let Some(message) = self.get_message_by_key_mut(msg_key) else {
@@ -1127,7 +1127,7 @@ impl DatabaseDBC {
 
         // Reset the detached signal metadata.
         if let Some(signal) = self.get_sig_by_key_mut(sig_key) {
-            signal.message = MessageKey::default();
+            signal.message = CanMessageKey::default();
             signal.mux_role = MuxRole::None;
             signal.mux_group = 0;
             signal.mux_switch = None;
@@ -1135,7 +1135,7 @@ impl DatabaseDBC {
         }
 
         // Remove the signal from every sender node's transmitted list.
-        let sender_nodes: Vec<NodeKey> = self
+        let sender_nodes: Vec<CanNodeKey> = self
             .get_message_by_key(msg_key)
             .map(|m| m.sender_nodes.clone())
             .unwrap_or_default();
@@ -1146,9 +1146,9 @@ impl DatabaseDBC {
         }
 
         // Rebuild the receiver list for the message (union of the remaining signal receivers).
-        let new_receivers: Vec<NodeKey> = if let Some(message) = self.get_message_by_key(msg_key) {
-            let mut seen: HashSet<NodeKey> = HashSet::new();
-            let mut ordered: Vec<NodeKey> = Vec::new();
+        let new_receivers: Vec<CanNodeKey> = if let Some(message) = self.get_message_by_key(msg_key) {
+            let mut seen: HashSet<CanNodeKey> = HashSet::new();
+            let mut ordered: Vec<CanNodeKey> = Vec::new();
             for &sk in &message.signals {
                 if let Some(sig) = self.get_sig_by_key(sk) {
                     for &nk in &sig.receiver_nodes {
@@ -1171,7 +1171,7 @@ impl DatabaseDBC {
     }
 
     /// Create a new Signal from an existing one adding "_copy" to the name.
-    pub fn copy_signal(&mut self, source_sig_key: SignalKey) -> Result<SignalKey, DatabaseError> {
+    pub fn copy_signal(&mut self, source_sig_key: CanSignalKey) -> Result<CanSignalKey, DatabaseError> {
         // check that the source node key correspond to a Node
         let (
             src_name,
@@ -1220,7 +1220,7 @@ impl DatabaseDBC {
             copy_counter += 1;
         }
 
-        let new_sig_key: SignalKey = self.add_signal(
+        let new_sig_key: CanSignalKey = self.add_signal(
             &new_name, src_endian, src_sign, src_factor, src_offset, src_min, src_max, &src_unit,
         );
         {
@@ -1246,60 +1246,60 @@ impl DatabaseDBC {
     }
 
     /// Returns `true` if the signal exists and is bound to a message.
-    pub fn signal_has_message(&self, signal_key: SignalKey) -> bool {
+    pub fn signal_has_message(&self, signal_key: CanSignalKey) -> bool {
         self.get_sig_by_key(signal_key)
             .map(|sig| !sig.message.is_null())
             .unwrap_or(false)
     }
 
-    /// Looks up the `SignalKey` for a case-insensitive signal name.
-    pub fn get_sig_key_by_name(&self, name: &str) -> Option<SignalKey> {
+    /// Looks up the `CanSignalKey` for a case-insensitive signal name.
+    pub fn get_sig_key_by_name(&self, name: &str) -> Option<CanSignalKey> {
         self.sig_key_by_name.get(&name.to_lowercase()).copied()
     }
 
     /// Returns an immutable reference to a signal given its key.
-    pub fn get_sig_by_key(&self, key: SignalKey) -> Option<&SignalDBC> {
+    pub fn get_sig_by_key(&self, key: CanSignalKey) -> Option<&CanSignal> {
         self.signals.get(key)
     }
 
     /// Returns a mutable reference to a signal given its key.
-    pub fn get_sig_by_key_mut(&mut self, key: SignalKey) -> Option<&mut SignalDBC> {
+    pub fn get_sig_by_key_mut(&mut self, key: CanSignalKey) -> Option<&mut CanSignal> {
         self.signals.get_mut(key)
     }
 
-    /// Returns a `&SignalDBC` given the name (case-insensitive).
-    pub fn get_signal_by_name(&self, name: &str) -> Option<&SignalDBC> {
-        let key: SignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
+    /// Returns a `&CanSignal` given the name (case-insensitive).
+    pub fn get_signal_by_name(&self, name: &str) -> Option<&CanSignal> {
+        let key: CanSignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
         self.get_sig_by_key(key)
     }
 
-    /// Returns a `&mut SignalDBC` given the name (case-insensitive).
-    pub fn get_signal_by_name_mut(&mut self, name: &str) -> Option<&mut SignalDBC> {
-        let key: SignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
+    /// Returns a `&mut CanSignal` given the name (case-insensitive).
+    pub fn get_signal_by_name_mut(&mut self, name: &str) -> Option<&mut CanSignal> {
+        let key: CanSignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
         self.get_sig_by_key_mut(key)
     }
 
     // -------------- Immutable Iterators ---------------
     /// Iterator according to the orders (defualt order is name based)
-    pub fn iter_nodes(&self) -> impl Iterator<Item = &NodeDBC> + '_ {
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &CanNode> + '_ {
         self.nodes_order.iter().filter_map(|&k| self.nodes.get(k))
     }
     /// Iterate messages following `messages_order`. If empty, insertion order is used.
-    pub fn iter_messages(&self) -> impl Iterator<Item = &MessageDBC> + '_ {
+    pub fn iter_messages(&self) -> impl Iterator<Item = &CanMessage> + '_ {
         self.messages_order
             .iter()
             .filter_map(|&k| self.messages.get(k))
     }
     /// Iterate signals following `signals_order`. If empty, insertion order is used.
-    pub fn iter_signals(&self) -> impl Iterator<Item = &SignalDBC> + '_ {
+    pub fn iter_signals(&self) -> impl Iterator<Item = &CanSignal> + '_ {
         self.signals_order
             .iter()
             .filter_map(|&k| self.signals.get(k))
     }
 
     // -------------- Mutable Closures ---------------
-    /// Closure to edit all NodeDBC
-    pub fn for_each_node_mut(&mut self, mut f: impl FnMut(&mut NodeDBC)) {
+    /// Closure to edit all CanNode
+    pub fn for_each_node_mut(&mut self, mut f: impl FnMut(&mut CanNode)) {
         let keys = self.nodes_order.clone(); // evitiamo borrow lungo su nodes_order
         for k in keys {
             if let Some(node) = self.nodes.get_mut(k) {
@@ -1308,8 +1308,8 @@ impl DatabaseDBC {
         }
     }
 
-    /// Closure to edit all MessageDBC
-    pub fn for_each_message_mut(&mut self, mut f: impl FnMut(&mut MessageDBC)) {
+    /// Closure to edit all CanMessage
+    pub fn for_each_message_mut(&mut self, mut f: impl FnMut(&mut CanMessage)) {
         let keys = self.messages_order.clone();
         for k in keys {
             if let Some(msg) = self.messages.get_mut(k) {
@@ -1318,8 +1318,8 @@ impl DatabaseDBC {
         }
     }
 
-    /// Closure to edit all SignalDBC
-    pub fn for_each_signal_mut(&mut self, mut f: impl FnMut(&mut SignalDBC)) {
+    /// Closure to edit all CanSignal
+    pub fn for_each_signal_mut(&mut self, mut f: impl FnMut(&mut CanSignal)) {
         let keys = self.signals_order.clone();
         for k in keys {
             if let Some(sig) = self.signals.get_mut(k) {
@@ -1349,7 +1349,7 @@ impl DatabaseDBC {
         match scope {
             AttrObject::Database => {
                 self.attributes.entry(attr_name).or_insert(default_value);
-                DatabaseDBC::sort_attribute_map(&mut self.attributes);
+                CanDatabase::sort_attribute_map(&mut self.attributes);
             }
             AttrObject::Node => {
                 let attr_name = attr_name.clone();
@@ -1434,7 +1434,7 @@ impl DatabaseDBC {
         match *old_object {
             AttrObject::Database => {
                 Self::reconcile_attribute_entry(&mut self.attributes, old_name, new_spec);
-                DatabaseDBC::sort_attribute_map(&mut self.attributes);
+                CanDatabase::sort_attribute_map(&mut self.attributes);
             }
             AttrObject::Node => {
                 self.for_each_node_mut(|node| {
@@ -1575,33 +1575,33 @@ impl DatabaseDBC {
             .sort_by_cached_key(|&k| self.signals.get(k).map(|s| s.name.to_ascii_lowercase()));
     }
 
-    /// Sort `messages_sent`, `tx_signals` and `rx_signals` inside the specific given NodeDBC
+    /// Sort `messages_sent`, `tx_signals` and `rx_signals` inside the specific given CanNode
     /// by the target names (ASCII case-insensitive).
-    pub fn sort_node_fields(&mut self, node_key: NodeKey) {
+    pub fn sort_node_fields(&mut self, node_key: CanNodeKey) {
         // Compute the new order on immutable borrows
         let (sorted_msgs, sorted_sigs_sent, sorted_sigs_received) = {
             let Some(node) = self.get_node_by_key(node_key) else {
                 return;
             };
 
-            // messages_sent -> by MessageDBC.name
-            let mut ms: Vec<MessageKey> = node.messages_sent.clone();
+            // messages_sent -> by CanMessage.name
+            let mut ms: Vec<CanMessageKey> = node.messages_sent.clone();
             ms.sort_by_cached_key(|&mk| {
                 self.get_message_by_key(mk)
                     .map(|m| m.name.to_ascii_lowercase())
                     .unwrap_or_default()
             });
 
-            // tx_signals -> by SignalDBC.name
-            let mut sr1: Vec<SignalKey> = node.tx_signals.clone();
+            // tx_signals -> by CanSignal.name
+            let mut sr1: Vec<CanSignalKey> = node.tx_signals.clone();
             sr1.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
                     .unwrap_or_default()
             });
 
-            // rx_signals -> by SignalDBC.name
-            let mut sr2: Vec<SignalKey> = node.rx_signals.clone();
+            // rx_signals -> by CanSignal.name
+            let mut sr2: Vec<CanSignalKey> = node.rx_signals.clone();
             sr2.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
@@ -1620,32 +1620,32 @@ impl DatabaseDBC {
         }
     }
 
-    /// Sort `sender_nodes` and `signals` inside the specific given MessageDBC
+    /// Sort `sender_nodes` and `signals` inside the specific given CanMessage
     /// by the target names (ASCII case-insensitive).
-    pub fn sort_message_fields(&mut self, msg_key: MessageKey) {
+    pub fn sort_message_fields(&mut self, msg_key: CanMessageKey) {
         let (sorted_senders, sorted_sigs, sorted_receivers) = {
             let Some(msg) = self.get_message_by_key(msg_key) else {
                 return;
             };
 
-            // sender_nodes -> by NodeDBC.name
-            let mut ns: Vec<NodeKey> = msg.sender_nodes.clone();
+            // sender_nodes -> by CanNode.name
+            let mut ns: Vec<CanNodeKey> = msg.sender_nodes.clone();
             ns.sort_by_cached_key(|&nk| {
                 self.get_node_by_key(nk)
                     .map(|n| n.name.to_ascii_lowercase())
                     .unwrap_or_default()
             });
 
-            // receiver_nodes -> by NodeDBC.name
-            let mut rn: Vec<NodeKey> = msg.receiver_nodes.clone();
+            // receiver_nodes -> by CanNode.name
+            let mut rn: Vec<CanNodeKey> = msg.receiver_nodes.clone();
             rn.sort_by_cached_key(|&nk| {
                 self.get_node_by_key(nk)
                     .map(|n| n.name.to_ascii_lowercase())
                     .unwrap_or_default()
             });
 
-            // signals -> by SignalDBC.name
-            let mut ss: Vec<SignalKey> = msg.signals.clone();
+            // signals -> by CanSignal.name
+            let mut ss: Vec<CanSignalKey> = msg.signals.clone();
             ss.sort_by_cached_key(|&sk| {
                 self.get_sig_by_key(sk)
                     .map(|s| s.name.to_ascii_lowercase())
@@ -1663,16 +1663,16 @@ impl DatabaseDBC {
         }
     }
 
-    /// Sort `receiver_nodes` inside the specific given SignalDBC
+    /// Sort `receiver_nodes` inside the specific given CanSignal
     /// by the target names (ASCII case-insensitive).
-    pub fn sort_signal_fields(&mut self, sig_key: SignalKey) {
-        let sorted_nodes: Vec<NodeKey> = {
+    pub fn sort_signal_fields(&mut self, sig_key: CanSignalKey) {
+        let sorted_nodes: Vec<CanNodeKey> = {
             let Some(sig) = self.get_sig_by_key(sig_key) else {
                 return;
             };
 
-            // receiver_nodes -> by NodeDBC.name
-            let mut ns: Vec<NodeKey> = sig.receiver_nodes.clone();
+            // receiver_nodes -> by CanNode.name
+            let mut ns: Vec<CanNodeKey> = sig.receiver_nodes.clone();
             ns.sort_by_key(|&nk| {
                 self.get_node_by_key(nk)
                     .map(|n| n.name.to_ascii_lowercase())
@@ -1703,10 +1703,10 @@ impl DatabaseDBC {
         map.extend(entries);
     }
 
-    /// For ALL NodeDBC entries, sort:
-    /// - `messages_sent`  by the target MessageDBC.name (ASCII case-insensitive)
-    /// - `tx_signals`  by the target MessageDBC.name (ASCII case-insensitive)
-    /// - `rx_signals`   by the target SignalDBC.name  (ASCII case-insensitive)
+    /// For ALL CanNode entries, sort:
+    /// - `messages_sent`  by the target CanMessage.name (ASCII case-insensitive)
+    /// - `tx_signals`  by the target CanMessage.name (ASCII case-insensitive)
+    /// - `rx_signals`   by the target CanSignal.name  (ASCII case-insensitive)
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key for determinism.
     pub fn sort_all_node_fields(&mut self) {
@@ -1716,7 +1716,7 @@ impl DatabaseDBC {
             .iter()
             .map(|(nk, node)| {
                 // messages_sent -> sort by message name (case-insensitive)
-                let mut ms: Vec<MessageKey> = node.messages_sent.clone();
+                let mut ms: Vec<CanMessageKey> = node.messages_sent.clone();
                 ms.sort_by_cached_key(|&mk| {
                     let (missing, name) = match self.get_message_by_key(mk) {
                         Some(m) => (false, m.name.to_ascii_lowercase()),
@@ -1726,7 +1726,7 @@ impl DatabaseDBC {
                 });
 
                 // tx_signals -> sort by signal name (case-insensitive)
-                let mut sr1: Vec<SignalKey> = node.tx_signals.clone();
+                let mut sr1: Vec<CanSignalKey> = node.tx_signals.clone();
                 sr1.sort_by_cached_key(|&sk| {
                     let (missing, name) = match self.get_sig_by_key(sk) {
                         Some(s) => (false, s.name.to_ascii_lowercase()),
@@ -1736,7 +1736,7 @@ impl DatabaseDBC {
                 });
 
                 // rx_signals -> sort by signal name (case-insensitive)
-                let mut sr2: Vec<SignalKey> = node.rx_signals.clone();
+                let mut sr2: Vec<CanSignalKey> = node.rx_signals.clone();
                 sr2.sort_by_cached_key(|&sk| {
                     let (missing, name) = match self.get_sig_by_key(sk) {
                         Some(s) => (false, s.name.to_ascii_lowercase()),
@@ -1767,9 +1767,9 @@ impl DatabaseDBC {
         }
     }
 
-    /// For ALL MessageDBC entries, sort:
-    /// - `sender_nodes` by NodeDBC.name    (ASCII case-insensitive)
-    /// - `signals`      by SignalDBC.name  (ASCII case-insensitive)
+    /// For ALL CanMessage entries, sort:
+    /// - `sender_nodes` by CanNode.name    (ASCII case-insensitive)
+    /// - `signals`      by CanSignal.name  (ASCII case-insensitive)
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key.
     pub fn sort_all_message_fields(&mut self) {
@@ -1823,12 +1823,12 @@ impl DatabaseDBC {
         }
     }
 
-    /// For ALL SignalDBC entries, sort:
-    /// - `receiver_nodes` by NodeDBC.name (ASCII case-insensitive)
+    /// For ALL CanSignal entries, sort:
+    /// - `receiver_nodes` by CanNode.name (ASCII case-insensitive)
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key.
     pub fn sort_all_signal_fields(&mut self) {
-        let plans: Vec<(SignalKey, Vec<NodeKey>, BTreeMap<String, AttributeValue>)> = self
+        let plans: Vec<(CanSignalKey, Vec<CanNodeKey>, BTreeMap<String, AttributeValue>)> = self
             .signals
             .iter()
             .map(|(sk, sig)| {
@@ -1856,7 +1856,7 @@ impl DatabaseDBC {
 
     /// Resets the entire database to an empty state (drops nodes, messages, signals, and metadata).
     pub fn clear(&mut self) {
-        *self = DatabaseDBC::default();
+        *self = CanDatabase::default();
     }
 }
 
@@ -1881,19 +1881,19 @@ impl BusType {
 // suport struct for node parsing
 #[derive(Debug, Clone)]
 struct NodePlan {
-    nk: NodeKey,
-    messages_sent: Vec<MessageKey>,
-    tx_signals: Vec<SignalKey>,
-    rx_signals: Vec<SignalKey>,
+    nk: CanNodeKey,
+    messages_sent: Vec<CanMessageKey>,
+    tx_signals: Vec<CanSignalKey>,
+    rx_signals: Vec<CanSignalKey>,
     attributes: BTreeMap<String, AttributeValue>,
 }
 
 /// Type alias to simplify clippy::type_complexity for message sorting plans.
 type MessageFieldPlan = (
-    MessageKey,
-    Vec<NodeKey>,
-    Vec<SignalKey>,
-    Vec<NodeKey>,
+    CanMessageKey,
+    Vec<CanNodeKey>,
+    Vec<CanSignalKey>,
+    Vec<CanNodeKey>,
     BTreeMap<String, AttributeValue>,
 );
 

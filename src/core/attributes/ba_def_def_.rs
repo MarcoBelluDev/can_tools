@@ -1,9 +1,9 @@
 use crate::types::{
     attributes::{AttrValueType, AttributeValue},
-    database::DatabaseDBC,
+    database::CanDatabase,
 };
 
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     // Expected formats:
     // BA_DEF_DEF_ "AttrName" <value>;
 

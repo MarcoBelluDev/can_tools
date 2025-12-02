@@ -1,6 +1,6 @@
-use crate::types::database::DatabaseDBC;
+use crate::types::database::CanDatabase;
 
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     // Example: VERSION "1.0"
     db.version = line
         .to_lowercase()
@@ -16,7 +16,7 @@ mod tests {
 
     #[test]
     fn test_decode() {
-        let mut db: DatabaseDBC = DatabaseDBC::default();
+        let mut db: CanDatabase = CanDatabase::default();
         // Example Line
         decode(&mut db, r#"VERSION "1.0.2""#);
         assert_eq!(db.version, "1.0.2");

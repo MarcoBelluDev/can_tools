@@ -1,9 +1,9 @@
 use crate::types::{
     attributes::{AttrValueType, AttributeValue},
-    database::DatabaseDBC,
+    database::CanDatabase,
 };
 
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     // Expected formats (relational attribute assignments):
     // BU_SG_REL_:
     //   BA_REL_ "GenSigTimeoutTime" BU_SG_REL_ <NodeName> SG_ <MsgId> <SigName> <value>;

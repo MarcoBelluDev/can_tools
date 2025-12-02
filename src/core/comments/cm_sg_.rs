@@ -1,11 +1,11 @@
 use crate::types::{
-    database::{DatabaseDBC, SignalKey},
-    message::MessageDBC,
+    database::{CanDatabase, CanSignalKey},
+    message::CanMessage,
 };
 
 /// Parse a signal-level comment:
 /// `CM_ SG_ <MessageID> <SignalName> "Comment...";`
-pub(crate) fn decode(db: &mut DatabaseDBC, text: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, text: &str) {
     let lower: String = text.to_ascii_lowercase();
     if !lower.starts_with("cm_ sg_") {
         return;
@@ -17,10 +17,10 @@ pub(crate) fn decode(db: &mut DatabaseDBC, text: &str) {
     let message_id: u32 = parts[2].parse::<u32>().unwrap_or(0);
     let signal_name: &str = parts[3].trim_matches('"'); // usually not quoted here
 
-    // Resolve the SignalKey by name within the message,
+    // Resolve the CanSignalKey by name within the message,
     // but keep the immutable borrow confined to this block.
-    let sig_key_opt: Option<SignalKey> = {
-        let msg: &MessageDBC = match db.get_message_by_id(message_id) {
+    let sig_key_opt: Option<CanSignalKey> = {
+        let msg: &CanMessage = match db.get_message_by_id(message_id) {
             Some(m) => m,
             None => return,
         };

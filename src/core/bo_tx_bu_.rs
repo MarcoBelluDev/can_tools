@@ -1,8 +1,8 @@
-use crate::types::database::{DatabaseDBC, NodeKey};
+use crate::types::database::{CanDatabase, CanNodeKey};
 
 /// Parse `BO_TX_BU_` lines assigning transmit-capable nodes to a message.
 /// Example: `BO_TX_BU_ 123 :NodeA,NodeB;`
-pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
+pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     // split in parts and remove final ";"
     let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();
 
@@ -29,7 +29,7 @@ pub(crate) fn decode(db: &mut DatabaseDBC, line: &str) {
     };
 
     // Resolve/create NodeIds first (no &mut msg held)
-    let mut node_keys: Vec<NodeKey> = Vec::new();
+    let mut node_keys: Vec<CanNodeKey> = Vec::new();
     for token in nodes_part.split(',') {
         let name: &str = token.trim();
         if name.is_empty() {

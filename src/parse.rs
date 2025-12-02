@@ -6,16 +6,16 @@ use encoding_rs::WINDOWS_1252;
 
 use crate::core;
 use crate::types::{
-    database::{BusType, DatabaseDBC, MessageKey, NodeKey},
+    database::{BusType, CanDatabase, CanMessageKey, CanNodeKey},
     errors::{ArxmlConvertError, DatabaseError, DbcParseError},
     message::MuxRole,
     signal::{Endianness, Signess},
 };
 
-/// Parses a DBC file and returns a populated [`DatabaseDBC`] instance.
+/// Parses a DBC file and returns a populated [`CanDatabase`] instance.
 ///
 /// This function reads a DBC file from disk, parses its content line by line,
-/// and fills the [`DatabaseDBC`] structure with all parsed information:
+/// and fills the [`CanDatabase`] structure with all parsed information:
 /// - **Name** (from `BA_ "DBName"` line)
 /// - **Version** (from `VERSION` line)
 /// - **Baudrate** (from `BA_ "Baudrate"` line)
@@ -37,7 +37,7 @@ use crate::types::{
 /// - `path`: Path to the `.dbc` file to parse.
 ///
 /// # Returns
-/// - `Ok(DatabaseDBC)` if the file was successfully read and parsed.
+/// - `Ok(CanDatabase)` if the file was successfully read and parsed.
 /// - `Err(DbcParseError)` detailing why the file could not be opened or read.
 ///
 /// # Errors
@@ -47,11 +47,11 @@ use crate::types::{
 /// - The path does not end in `.dbc`.
 ///
 /// # Notes
-/// - This function is the main entry point for converting a DBC file into a structured [`DatabaseDBC`].
-/// - Internal parsing details are handled by [`DatabaseDBC`] methods and are **not** part of the public API.
+/// - This function is the main entry point for converting a DBC file into a structured [`CanDatabase`].
+/// - Internal parsing details are handled by [`CanDatabase`] methods and are **not** part of the public API.
 /// - Parsing stops only at the end of the file; malformed lines are skipped.
 ///
-pub fn from_dbc_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
+pub fn from_dbc_file(path: &str) -> Result<CanDatabase, DbcParseError> {
     // check if provided file has .dbc format
     if !path.ends_with(".dbc") {
         return Err(DbcParseError::InvalidExtension {
@@ -66,8 +66,8 @@ pub fn from_dbc_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
     })?;
     let mut reader: BufReader<File> = BufReader::new(file);
 
-    // Initialize DatabaseDBC
-    let mut db: DatabaseDBC = DatabaseDBC::default();
+    // Initialize CanDatabase
+    let mut db: CanDatabase = CanDatabase::default();
 
     // Buffer for raw bytes of a line
     let mut raw_line: Vec<u8> = Vec::with_capacity(256);
@@ -294,7 +294,7 @@ pub fn from_dbc_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
     }
 
     // re-order
-    DatabaseDBC::sort_attribute_map(&mut db.attributes);
+    CanDatabase::sort_attribute_map(&mut db.attributes);
     db.sort_db_nodes_by_name();
     db.sort_db_messages_by_name();
     db.sort_db_signals_by_name();
@@ -305,10 +305,10 @@ pub fn from_dbc_file(path: &str) -> Result<DatabaseDBC, DbcParseError> {
     Ok(db)
 }
 
-/// Extracts one or more [`DatabaseDBC`] objects from a `.arxml` file by walking all
+/// Extracts one or more [`CanDatabase`] objects from a `.arxml` file by walking all
 /// defined `CAN-CLUSTER`s. Each cluster becomes its own database, populated with
 /// known messages, signals, and nodes derived from the frame ports.
-pub fn from_arxml_to_dbc(path: &str) -> Result<Vec<DatabaseDBC>, ArxmlConvertError> {
+pub fn from_arxml_to_dbc(path: &str) -> Result<Vec<CanDatabase>, ArxmlConvertError> {
     if !path.ends_with(".arxml") {
         return Err(ArxmlConvertError::InvalidExtension {
             path: path.to_string(),
@@ -325,7 +325,7 @@ pub fn from_arxml_to_dbc(path: &str) -> Result<Vec<DatabaseDBC>, ArxmlConvertErr
             source: io::Error::other(source),
         })?;
 
-    let mut databases: Vec<DatabaseDBC> = Vec::new();
+    let mut databases: Vec<CanDatabase> = Vec::new();
 
     for element in model
         .identifiable_elements()
@@ -335,7 +335,7 @@ pub fn from_arxml_to_dbc(path: &str) -> Result<Vec<DatabaseDBC>, ArxmlConvertErr
             && let Some(mut db) = build_can_database(&element)
         {
             // re-order
-            DatabaseDBC::sort_attribute_map(&mut db.attributes);
+            CanDatabase::sort_attribute_map(&mut db.attributes);
             db.sort_db_nodes_by_name();
             db.sort_db_messages_by_name();
             db.sort_db_signals_by_name();
@@ -349,9 +349,9 @@ pub fn from_arxml_to_dbc(path: &str) -> Result<Vec<DatabaseDBC>, ArxmlConvertErr
     Ok(databases)
 }
 
-/// Converte un singolo `CAN-CLUSTER` in un [`DatabaseDBC`].
-fn build_can_database(cluster: &Element) -> Option<DatabaseDBC> {
-    let mut db: DatabaseDBC = DatabaseDBC {
+/// Converte un singolo `CAN-CLUSTER` in un [`CanDatabase`].
+fn build_can_database(cluster: &Element) -> Option<CanDatabase> {
+    let mut db: CanDatabase = CanDatabase {
         name: cluster.item_name().unwrap_or_default(),
         ..Default::default()
     };
@@ -389,7 +389,7 @@ fn build_can_database(cluster: &Element) -> Option<DatabaseDBC> {
 }
 
 /// Estrae messaggio, segnali e relazioni da un `<CAN-FRAME-TRIGGERING>`.
-fn process_can_frame_triggering(db: &mut DatabaseDBC, frame_triggering: &Element) {
+fn process_can_frame_triggering(db: &mut CanDatabase, frame_triggering: &Element) {
     let frame = match frame_triggering
         .get_sub_element(ElementName::FrameRef)
         .and_then(|elem| elem.get_reference_target().ok())
@@ -410,7 +410,7 @@ fn process_can_frame_triggering(db: &mut DatabaseDBC, frame_triggering: &Element
         .and_then(|cdata| cdata.parse_integer::<u16>())
         .unwrap_or(0);
 
-    let msg_key: MessageKey = ensure_message(db, &frame_name, can_id, byte_length);
+    let msg_key: CanMessageKey = ensure_message(db, &frame_name, can_id, byte_length);
 
     // Sender/receiver nodes
     let frame_ports: Vec<Element> = frame_triggering
@@ -444,8 +444,8 @@ fn process_can_frame_triggering(db: &mut DatabaseDBC, frame_triggering: &Element
 
 /// Converte un `<I-SIGNAL-I-PDU>` (o contenitori annidati) in segnali DBC.
 fn collect_isignal_mappings(
-    db: &mut DatabaseDBC,
-    msg_key: MessageKey,
+    db: &mut CanDatabase,
+    msg_key: CanMessageKey,
     pdu: &Element,
     receiver_ecus: &[String],
 ) {
@@ -464,8 +464,8 @@ fn collect_isignal_mappings(
 }
 
 fn process_isignal_ipdu(
-    db: &mut DatabaseDBC,
-    msg_key: MessageKey,
+    db: &mut CanDatabase,
+    msg_key: CanMessageKey,
     pdu: &Element,
     receiver_ecus: &[String],
 ) {
@@ -579,7 +579,7 @@ fn ecu_of_frame_port(frame_port: &Element) -> Option<String> {
     ecu_instance.item_name()
 }
 
-fn ensure_node(db: &mut DatabaseDBC, name: &str) -> Option<NodeKey> {
+fn ensure_node(db: &mut CanDatabase, name: &str) -> Option<CanNodeKey> {
     if let Some(nk) = db.get_node_key_by_name(name) {
         return Some(nk);
     }
@@ -590,7 +590,7 @@ fn ensure_node(db: &mut DatabaseDBC, name: &str) -> Option<NodeKey> {
     }
 }
 
-fn ensure_message(db: &mut DatabaseDBC, name: &str, id: u32, dlc: u16) -> MessageKey {
+fn ensure_message(db: &mut CanDatabase, name: &str, id: u32, dlc: u16) -> CanMessageKey {
     if let Some(k) = db.get_msg_key_by_id(id) {
         return k;
     }
@@ -680,7 +680,7 @@ fn text_from_cdata(cdata: CharacterData) -> Option<String> {
     }
 }
 
-fn process_npdu(db: &mut DatabaseDBC, msg_key: MessageKey, pdu: &Element) {
+fn process_npdu(db: &mut CanDatabase, msg_key: CanMessageKey, pdu: &Element) {
     let msg_name = db
         .get_message_by_key(msg_key)
         .map(|m| m.name.clone())
