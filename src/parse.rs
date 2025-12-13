@@ -308,7 +308,7 @@ pub fn from_dbc_file(path: &str) -> Result<CanDatabase, DbcParseError> {
 /// Extracts one or more [`CanDatabase`] objects from a `.arxml` file by walking all
 /// defined `CAN-CLUSTER`s. Each cluster becomes its own database, populated with
 /// known messages, signals, and nodes derived from the frame ports.
-pub fn from_arxml_to_dbc(path: &str) -> Result<Vec<CanDatabase>, ArxmlConvertError> {
+pub fn from_arxml_file(path: &str) -> Result<Vec<CanDatabase>, ArxmlConvertError> {
     if !path.ends_with(".arxml") {
         return Err(ArxmlConvertError::InvalidExtension {
             path: path.to_string(),
