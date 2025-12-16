@@ -4,13 +4,15 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Parses a message-level `BA_DEF_ BO_` attribute specification.
+///
+/// Supported shapes:
+/// - `BA_DEF_ BO_  "GenMsgPDUConstants" STRING;`
+/// - `BA_DEF_ BO_  "GenMsgCycleTime" INT 0 65535;`
+/// - `BA_DEF_ BO_  "GenMsgChkConstant" HEX 0 4095;`
+/// - `BA_DEF_ BO_  "GenMsgDelayTime" FLOAT 0.0 100.0;`
+/// - `BA_DEF_ BO_  "DiagResponse" ENUM "No", "Yes";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (global BA_ attributes):
-    // BA_DEF_ BO_  "GenMsgPDUConstants" STRING;
-    // BA_DEF_ BO_  "GenMsgCycleTime" INT 0 65535;
-    // BA_DEF_ BO_  "GenMsgChkConstant" HEX 0 4095;
-    // BA_DEF_ BO_  "GenMsgDelayTime" FLOAT 0.0 100.0;
-    // BA_DEF_ BO_  "DiagResponse" ENUM "No", "Yes";
 
     // keep a copy to extract quoted string for Enum
     let line_copy: &str = line.trim().trim_end_matches(';');

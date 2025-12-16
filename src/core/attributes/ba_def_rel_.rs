@@ -4,11 +4,13 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Parses a `BA_DEF_REL_` relational attribute specification.
+///
+/// Supported shapes include:
+/// - `BA_DEF_REL_ BU_SG_REL_  "GenSigTimeoutTime" INT 0 65535;`
+/// - `BA_DEF_REL_ BU_BO_REL_  "GenMsgTimeoutTime" INT 0 65535;`
+/// - `BA_DEF_REL_ BU_EV_REL_  "SomeEnvRelAttr"   ENUM "Off","On";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (relational attribute definitions):
-    // BA_DEF_REL_ BU_SG_REL_  "GenSigTimeoutTime" INT 0 65535;
-    // BA_DEF_REL_ BU_BO_REL_  "GenMsgTimeoutTime" INT 0 65535;
-    // BA_DEF_REL_ BU_EV_REL_  "SomeEnvRelAttr"   ENUM "Off","On";
 
     // Trim ending ';' and split by ASCII whitespace.
     let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();

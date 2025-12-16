@@ -3,9 +3,10 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Parses a `BA_DEF_DEF_` default assignment for an existing attribute spec.
+///
+/// Format: `BA_DEF_DEF_ "AttrName" <value>;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats:
-    // BA_DEF_DEF_ "AttrName" <value>;
 
     // Trim ending ';' and split by ASCII whitespace.
     let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();

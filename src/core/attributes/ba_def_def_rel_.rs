@@ -3,9 +3,10 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Parses a `BA_DEF_DEF_REL_` default for relational attributes.
+///
+/// Format example: `BA_DEF_DEF_REL_  "GenSigTimeoutTime" 0;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (defaults for relational attributes):
-    // BA_DEF_DEF_REL_  "GenSigTimeoutTime" 0;
 
     // Trim ending ';' and split by ASCII whitespace.
     let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();

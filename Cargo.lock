@@ -60,6 +60,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
+name = "can_tools"
+version = "2.1.2"
+dependencies = [
+ "autosar-data",
+ "chrono",
+ "encoding_rs",
+ "serde",
+ "slotmap",
+ "thiserror",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -93,18 +105,6 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
-
-[[package]]
-name = "dbc_editor"
-version = "2.1.2"
-dependencies = [
- "autosar-data",
- "chrono",
- "encoding_rs",
- "serde",
- "slotmap",
- "thiserror",
-]
 
 [[package]]
 name = "encoding_rs"

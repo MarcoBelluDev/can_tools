@@ -86,7 +86,7 @@ pub enum MessageLayoutError {
     MotorolaEndOutOfBounds { end: isize, dlc: u16 },
 }
 
-/// Errors returned by high-level operations on [`DatabaseDBC`](crate::types::database::DatabaseDBC).
+/// Errors returned by high-level operations on [`CanDatabase`](crate::types::database::CanDatabase).
 #[derive(Debug, Error)]
 pub enum DatabaseError {
     #[error("Node '{name}' already exists")]

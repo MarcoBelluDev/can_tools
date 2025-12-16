@@ -4,13 +4,15 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Parses a signal-level `BA_DEF_ SG_` attribute specification.
+///
+/// Supported shapes:
+/// - `BA_DEF_ SG_  "SigInfo" STRING;`
+/// - `BA_DEF_ SG_  "GenSigStartValue" INT -2147483648 2147483647;`
+/// - `BA_DEF_ SG_  "GenSigMissingSourceValue" HEX 0 2147483647;`
+/// - `BA_DEF_ SG_  "SigDelay" FLOAT 0.0 100.0;`
+/// - `BA_DEF_ SG_  "GenSigSwitchedByIgnition" ENUM "No", "Yes";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (global BA_ attributes):
-    // BA_DEF_ SG_  "SigInfo" STRING;
-    // BA_DEF_ SG_  "GenSigStartValue" INT -2147483648 2147483647;
-    // BA_DEF_ SG_  "GenSigMissingSourceValue" HEX 0 2147483647;
-    // BA_DEF_ SG_  "SigDelay" FLOAT 0.0 100.0;
-    // BA_DEF_ SG_  "GenSigSwitchedByIgnition" ENUM "No", "Yes";
 
     // keep a copy to extract quoted string for Enum
     let line_copy: &str = line.trim().trim_end_matches(';');

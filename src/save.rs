@@ -87,7 +87,7 @@ pub fn save_to_file(path: &str, database: &CanDatabase) -> Result<(), DbcSaveErr
     Ok(())
 }
 
-// Serializes the database into raw DBC text using the provided writer.
+/// Serializes the database into raw DBC text using the provided writer.
 fn serialize_database<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     let version = escape_dbc_string(&db.version);
     write_fmt(out, format_args!("VERSION \"{}\"\n\n", version))?;
@@ -141,7 +141,7 @@ fn serialize_database<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()>
     Ok(())
 }
 
-// Writes each message and its signals into standard DBC syntax.
+/// Writes each message and its signals into standard DBC syntax.
 fn write_messages<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         let transmitter = message
@@ -213,7 +213,7 @@ fn write_messages<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     Ok(())
 }
 
-// Emits BO_TX_BU entries describing message transmitters.
+/// Emits `BO_TX_BU_` entries describing message transmitters.
 fn write_bo_tx_bu<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         let mut transmitters: Vec<String> = Vec::new();
@@ -238,7 +238,7 @@ fn write_bo_tx_bu<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     Ok(())
 }
 
-// Outputs attribute definitions for database, node, message, and signal scopes.
+/// Outputs attribute definitions for database, node, message, and signal scopes.
 fn write_attribute_definitions<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     // DB
     for (name, spec) in db
@@ -292,7 +292,7 @@ fn write_attribute_definitions<W: Write>(db: &CanDatabase, out: &mut W) -> io::R
     Ok(())
 }
 
-// Outputs attribute definitions for relation-scoped attributes.
+/// Outputs attribute definitions for relation-scoped attributes.
 fn write_relation_attribute_definitions<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     for (name, spec) in &db.rel_attr_spec_bu_sg {
         let signature: String = format_attribute_spec(spec);
@@ -313,7 +313,7 @@ fn write_relation_attribute_definitions<W: Write>(db: &CanDatabase, out: &mut W)
     Ok(())
 }
 
-// Writes the default values for each scoped attribute.
+/// Writes the default values for each scoped attribute.
 fn write_attribute_defaults<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     let mut defaults: BTreeMap<String, AttributeValue> = BTreeMap::new();
 
@@ -334,7 +334,7 @@ fn write_attribute_defaults<W: Write>(db: &CanDatabase, out: &mut W) -> io::Resu
     Ok(())
 }
 
-// Writes default values for relation-scoped attributes.
+/// Writes default values for relation-scoped attributes.
 fn write_relation_attribute_defaults<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     let mut defaults: BTreeMap<String, AttributeValue> = BTreeMap::new();
 
@@ -356,7 +356,7 @@ fn write_relation_attribute_defaults<W: Write>(db: &CanDatabase, out: &mut W) ->
     Ok(())
 }
 
-// Emits attribute assignments for databases, nodes, messages, and signals.
+/// Emits attribute assignments for databases, nodes, messages, and signals.
 fn write_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     for (name, value) in &db.attributes {
         let spec = db.attr_spec.get(name);
@@ -407,7 +407,7 @@ fn write_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W) -> io::R
     Ok(())
 }
 
-// Emits BA_REL statements for relation-scoped attribute assignments.
+/// Emits `BA_REL_` statements for relation-scoped attribute assignments.
 fn write_relation_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     let mut bu_sg_entries: Vec<(String, u32, String, &BTreeMap<String, AttributeValue>)> =
         Vec::new();
@@ -474,7 +474,7 @@ fn write_relation_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W)
     Ok(())
 }
 
-// Writes CM_ comment blocks for database items.
+/// Writes `CM_` comment blocks for database items.
 fn write_comments<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     if !db.comment.is_empty() {
         let comment = escape_dbc_string(&db.comment);
@@ -520,7 +520,7 @@ fn write_comments<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     Ok(())
 }
 
-// Emits SIG_VALTYPE_ lines for floating-point signals.
+/// Emits `SIG_VALTYPE_` lines for floating-point signals.
 fn write_sig_valtype<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         for sig_key in &message.signals {
@@ -543,7 +543,7 @@ fn write_sig_valtype<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> 
     Ok(())
 }
 
-// Outputs VAL_ tables for enumerated signal values.
+/// Outputs `VAL_` tables for enumerated signal values.
 fn write_value_tables<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
         for sig_key in &message.signals {
@@ -563,7 +563,7 @@ fn write_value_tables<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()>
     Ok(())
 }
 
-// Produces the multiplexing tag used in SG_ lines.
+/// Produces the multiplexing tag used in `SG_` lines.
 fn format_mux_tag(signal: &crate::types::signal::CanSignal) -> String {
     match signal.mux_role {
         MuxRole::Multiplexor => " M".to_string(),
@@ -575,7 +575,7 @@ fn format_mux_tag(signal: &crate::types::signal::CanSignal) -> String {
     }
 }
 
-// Converts an attribute definition into its signature text.
+/// Converts an attribute definition into its signature text.
 fn format_attribute_spec(spec: &AttributeSpec) -> String {
     match spec.value_type {
         AttrValueType::String => "STRING".to_string(),
@@ -606,7 +606,7 @@ fn format_attribute_spec(spec: &AttributeSpec) -> String {
     }
 }
 
-// Formats an attribute value using optional spec information.
+/// Formats an attribute value using optional spec information.
 fn format_attribute_value(value: &AttributeValue, spec: Option<&AttributeSpec>) -> String {
     match value {
         AttributeValue::Str(s) => format!("\"{}\"", escape_dbc_string(s)),
@@ -624,7 +624,7 @@ fn format_attribute_value(value: &AttributeValue, spec: Option<&AttributeSpec>) 
     }
 }
 
-// Formats floating-point values while stripping redundant trailing zeros.
+/// Formats floating-point values while stripping redundant trailing zeros.
 fn format_f64(value: f64) -> String {
     if value.fract() == 0.0 {
         format!("{:.0}", value)
@@ -640,7 +640,7 @@ fn format_f64(value: f64) -> String {
     }
 }
 
-// Escapes characters so they are safe inside DBC quoted strings.
+/// Escapes characters so they are safe inside DBC quoted strings.
 fn escape_dbc_string(input: &str) -> String {
     let mut escaped = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -656,7 +656,7 @@ fn escape_dbc_string(input: &str) -> String {
     escaped
 }
 
-// Collects default attribute values across scopes into a single map.
+/// Collects default attribute values across scopes into a single map.
 fn collect_defaults_from_scope(
     db: &CanDatabase,
     scope: AttrObject,
@@ -673,12 +673,12 @@ fn collect_defaults_from_scope(
             .or_insert_with(|| spec.default.clone());
     }
 }
-// Looks up an attribute specification regardless of its scope.
+/// Looks up an attribute specification regardless of its scope.
 fn lookup_attr_spec<'a>(db: &'a CanDatabase, name: &str) -> Option<&'a AttributeSpec> {
     db.attr_spec.get(name)
 }
 
-// Writes formatted arguments to the writer while preserving io::Error details.
+/// Writes formatted arguments to the writer while preserving `io::Error` details.
 struct IoWriteAdapter<'a, W: Write> {
     inner: &'a mut W,
     error: Option<io::Error>,
@@ -694,6 +694,7 @@ impl<'a, W: Write> FmtWrite for IoWriteAdapter<'a, W> {
     }
 }
 
+/// Writes formatted arguments to any writer, propagating the underlying I/O error.
 fn write_fmt<W: Write>(out: &mut W, args: fmt::Arguments<'_>) -> io::Result<()> {
     let mut adapter = IoWriteAdapter {
         inner: out,
@@ -707,7 +708,7 @@ fn write_fmt<W: Write>(out: &mut W, args: fmt::Arguments<'_>) -> io::Result<()> 
     }
 }
 
-// Filters out signals that are not assigned to a message.
+/// Filters out signals that are not assigned to a message.
 fn collect_independent_signals(db: &CanDatabase) -> Vec<CanSignal> {
     db.iter_signals()
         .filter(|s| s.message.is_null())
@@ -715,7 +716,7 @@ fn collect_independent_signals(db: &CanDatabase) -> Vec<CanSignal> {
         .collect()
 }
 
-// Synthesizes a fake message containing independent signals for export.
+/// Synthesizes a fake message containing independent signals for export.
 fn write_independent_signals_as_fake_message<W: Write>(
     db: &CanDatabase,
     orphans: &[CanSignal],

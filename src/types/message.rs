@@ -43,7 +43,7 @@ pub struct CanMessage {
 
     /// Fast lookup: for each Multiplexor -> for each selector -> signals gated by that selector.
     ///
-    /// Example: mux_cases[Motor_MUX][Value(0)] = [Motor_status, Motor_Direction, ...]
+    /// Example: mux_cases\[Motor_MUX\]\[Value(0)\] = [Motor_status, Motor_Direction, ...]
     pub mux_cases: HashMap<CanSignalKey, HashMap<MuxSelector, Vec<CanSignalKey>>>,
 }
 
@@ -61,6 +61,7 @@ impl CanMessage {
     }
 }
 
+/// CAN identifier format (standard 11-bit or extended 29-bit).
 #[derive(Default, Copy, Clone, PartialEq, Debug)]
 pub enum IdFormat {
     #[default]
@@ -78,7 +79,7 @@ impl IdFormat {
     }
 }
 
-/// What role (if any) a signal plays in multiplexing.
+/// Role a signal plays in multiplexing.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum MuxRole {
     /// Not multiplexed (always present).
@@ -100,7 +101,7 @@ impl fmt::Display for MuxRole {
     }
 }
 
-/// A selector for multiplexed signals: either a single value or a closed range.
+/// Selector for multiplexed signals: either a single value or a closed range.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MuxSelector {
     /// Active only when the switch == value.

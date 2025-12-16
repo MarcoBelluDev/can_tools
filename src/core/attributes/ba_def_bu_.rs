@@ -4,13 +4,15 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Parses a node-level `BA_DEF_ BU_` attribute specification.
+///
+/// Supported shapes:
+/// - `BA_DEF_ BU_  "NodeLayerModules" STRING;`
+/// - `BA_DEF_ BU_  "GenNodSleepTime" INT 0 1000000;`
+/// - `BA_DEF_ BU_  "NodeAddress" HEX 0 4536436;`
+/// - `BA_DEF_ BU_  "SamplePointMin" FLOAT 50.0 99.9;`
+/// - `BA_DEF_ BU_  "GenNodAutoGenSnd" ENUM "No", "Yes";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (global BA_ attributes):
-    // BA_DEF_ BU_  "NodeLayerModules" STRING;
-    // BA_DEF_ BU_  "GenNodSleepTime" INT 0 1000000;
-    // BA_DEF_ BU_  "NodeAddress" HEX 0 4536436;
-    // BA_DEF_ BU_  "SamplePointMin" FLOAT 50.0 99.9;
-    // BA_DEF_ BU_  "GenNodAutoGenSnd" ENUM "No", "Yes";
 
     // keep a copy to extract quoted string for Enum
     let line_copy: &str = line.trim().trim_end_matches(';');

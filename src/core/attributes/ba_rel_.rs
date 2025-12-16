@@ -3,14 +3,13 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Decodes relational `BA_REL_` assignments.
+///
+/// Supported shapes:
+/// - `BA_REL_ "GenSigTimeoutTime" BU_SG_REL_ <NodeName> SG_ <MsgId> <SigName> <value>;`
+/// - `BA_REL_ "GenMsgTimeoutTime" BU_BO_REL_ <NodeName> BO_ <MsgId> <value>;`
+/// - `BA_REL_ "SomeEnvRelAttr"   BU_EV_REL_ <NodeName> EV_ <EnvVarName> <value>;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (relational attribute assignments):
-    // BU_SG_REL_:
-    //   BA_REL_ "GenSigTimeoutTime" BU_SG_REL_ <NodeName> SG_ <MsgId> <SigName> <value>;
-    // BU_BO_REL_:
-    //   BA_REL_ "GenMsgTimeoutTime" BU_BO_REL_ <NodeName> BO_ <MsgId> <value>;
-    // BU_EV_REL_:
-    //   BA_REL_ "SomeEnvRelAttr"   BU_EV_REL_ <NodeName> EV_ <EnvVarName> <value>;
 
     // ...plus other attributes listed below.
 

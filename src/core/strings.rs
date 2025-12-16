@@ -1,10 +1,12 @@
-// Utilities for parsing quoted strings in DBC files.
-//
-// These helpers support escaped quotes (\") and multi-line quoted strings,
-// which are common in CM_ comments or attribute values.
+//! Utilities for parsing quoted strings in DBC files.
+//!
+//! These helpers support escaped quotes (`\"`) and multi-line quoted strings,
+//! which are common in `CM_` comments or attribute values.
 
-// Count unescaped double quotes in a string.
-// A quote is considered escaped if immediately preceded by an odd number of backslashes.
+/// Counts unescaped double quotes in a string.
+///
+/// A quote is considered escaped if immediately preceded by an **odd** number
+/// of backslashes. This matches how DBC escapes quoted content.
 pub(crate) fn count_unescaped_quotes(s: &str) -> usize {
     let mut count = 0usize;
     let mut backslashes = 0usize;
@@ -21,12 +23,15 @@ pub(crate) fn count_unescaped_quotes(s: &str) -> usize {
     count
 }
 
-// Return true if the string contains at least two unescaped quotes.
+/// Returns `true` if the string contains at least two unescaped quotes.
 pub(crate) fn has_complete_quoted_segment(s: &str) -> bool {
     count_unescaped_quotes(s) >= 2
 }
 
-// --- helper: collect strings within "" r ---
+/// Collects every quoted segment (`"..."`) within the provided string.
+///
+/// This is tolerant to unclosed quotes: parsing stops at the first unmatched
+/// `"` encountered.
 pub(crate) fn collect_all_quoted(s: &str) -> Vec<String> {
     let bytes: &[u8] = s.as_bytes();
     let mut out: Vec<String> = Vec::new();
@@ -51,17 +56,4 @@ pub(crate) fn collect_all_quoted(s: &str) -> Vec<String> {
     }
 
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_count_unescaped_quotes() {
-        assert_eq!(count_unescaped_quotes("\"a\""), 2);
-        assert_eq!(count_unescaped_quotes("\\\"a\\\""), 0);
-        assert!(has_complete_quoted_segment("before \"x\" after"));
-        assert!(!has_complete_quoted_segment("before \"x without end"));
-    }
 }

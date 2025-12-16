@@ -123,12 +123,12 @@ impl CanSignal {
         Self::sample_at_timestamp(&self.values, timestamp)
     }
 
-    /// Returns the stored relaxed raw value that matches the provided timestamp.
+    /// Returns the stored relaxed raw value nearest to the provided timestamp.
     pub fn raw_value_at_relaxed(&self, timestamp: f64) -> Option<i64> {
         Self::sample_at_timestamp_relaxed(&self.raws, timestamp)
     }
 
-    /// Returns the stored relaxed physical value that matches the provided timestamp.
+    /// Returns the stored relaxed physical value nearest to the provided timestamp.
     pub fn value_at_relaxed(&self, timestamp: f64) -> Option<f64> {
         Self::sample_at_timestamp_relaxed(&self.values, timestamp)
     }
@@ -162,6 +162,9 @@ impl CanSignal {
     }
 
     /// Precomputes bit → value extraction steps to speed up decoding.
+    ///
+    /// The compilation is idempotent: subsequent calls exit early once steps
+    /// are already available.
     pub fn compile_inline(&mut self) {
         if !self.steps.is_empty() {
             return;
@@ -290,6 +293,7 @@ impl CanSignal {
     }
 }
 
+/// Byte order used to interpret signal bits inside a CAN frame.
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum Endianness {
     #[default]
@@ -306,6 +310,7 @@ impl fmt::Display for Endianness {
     }
 }
 
+/// Sign/encoding of the signal raw value.
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum Signess {
     #[default]

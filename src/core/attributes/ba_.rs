@@ -3,12 +3,14 @@ use crate::types::{
     database::{BusType, CanDatabase},
 };
 
+/// Decodes a database-level `BA_` assignment.
+///
+/// Accepted shapes (global attributes only):
+/// - `BA_ "DBName" "TestCAN";`
+/// - `BA_ "BusType" "CAN FD";`
+/// - `BA_ "Baudrate" 500000;`
+/// - `BA_ "BaudrateCANFD" 2000000;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (global BA_ attributes):
-    // BA_ "DBName" "TestCAN";
-    // BA_ "BusType" "CAN FD";
-    // BA_ "Baudrate" 500000;
-    // BA_ "BaudrateCANFD" 2000000;
 
     // ...plus other attributes listed below.
 

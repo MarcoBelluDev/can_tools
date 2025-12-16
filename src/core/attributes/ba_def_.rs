@@ -4,13 +4,15 @@ use crate::types::{
     database::CanDatabase,
 };
 
+/// Parses a database-level `BA_DEF_` attribute specification.
+///
+/// Supported shapes:
+/// - `BA_DEF_  "DBName" STRING;`
+/// - `BA_DEF_  "Baudrate" INT 1 1000000;`
+/// - `BA_DEF_  "BaudrateCANFD" INT 1 16000000;`
+/// - `BA_DEF_  "NmhBaseAddress" HEX 0 536870911;`
+/// - `BA_DEF_ "IsCan" ENUM "No", "Yes";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-    // Expected formats (global BA_ attributes):
-    // BA_DEF_  "DBName" STRING;
-    // BA_DEF_  "Baudrate" INT 1 1000000;
-    // BA_DEF_  "BaudrateCANFD" INT 1 16000000;
-    // BA_DEF_  "NmhBaseAddress" HEX 0 536870911;
-    // BA_DEF_ "IsCan" ENUM "No", "Yes";
 
     // keep a copy to extract quoted string for Enum
     let line_copy: &str = line.trim().trim_end_matches(';');

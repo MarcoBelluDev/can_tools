@@ -3,7 +3,9 @@ use crate::types::{
     database::CanDatabase,
 };
 
-/// `BA_ "Attribute" BU_ <Name> <value>;`
+/// Decodes a node-level `BA_` assignment.
+///
+/// Format: `BA_ "Attribute" BU_ <Name> <value>;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
 

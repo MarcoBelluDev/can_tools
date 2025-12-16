@@ -20,6 +20,7 @@ pub struct AttributeSpec {
     pub type_of_object: AttrObject,
 }
 impl AttributeSpec {
+    /// Human-readable lower bound, respecting the declared value type.
     pub fn minimum_to_string(&self) -> String {
         match self.value_type {
             AttrValueType::String | AttrValueType::Enum => String::new(),
@@ -52,6 +53,7 @@ impl AttributeSpec {
             },
         }
     }
+    /// Human-readable upper bound, respecting the declared value type.
     pub fn maximum_to_string(&self) -> String {
         match self.value_type {
             AttrValueType::String | AttrValueType::Enum => String::new(),
@@ -84,6 +86,7 @@ impl AttributeSpec {
             },
         }
     }
+    /// Human-readable default value stringified according to the attribute type.
     pub fn default_to_string(&self) -> String {
         match &self.default {
             AttributeValue::Str(s) => s.to_string(),
@@ -168,6 +171,7 @@ impl fmt::Display for AttributeValue {
 }
 
 impl AttributeValue {
+    /// Resets the value to its neutral default for the current variant.
     pub fn clear(&mut self) {
         match self {
             AttributeValue::Str(s) => s.clear(),
@@ -179,7 +183,7 @@ impl AttributeValue {
     }
 }
 
-/// The type of Object of the Attribute
+/// Declares which entity kind (DB/Node/Message/Signal) an attribute targets.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AttrObject {
     #[default]

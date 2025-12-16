@@ -463,6 +463,7 @@ fn collect_isignal_mappings(
     }
 }
 
+/// Processa un `I-SIGNAL-I-PDU` (o NM-PDU) convertendo i mapping in segnali DBC.
 fn process_isignal_ipdu(
     db: &mut CanDatabase,
     msg_key: CanMessageKey,
@@ -579,6 +580,11 @@ fn ecu_of_frame_port(frame_port: &Element) -> Option<String> {
     ecu_instance.item_name()
 }
 
+/// Ensures a node with the given name exists, returning its key.
+///
+/// If the node already exists, its key is returned; otherwise the node is
+/// created. Any creation errors (e.g., conflicting names) simply return `None`
+/// to keep parsing resilient.
 fn ensure_node(db: &mut CanDatabase, name: &str) -> Option<CanNodeKey> {
     if let Some(nk) = db.get_node_key_by_name(name) {
         return Some(nk);
@@ -590,6 +596,11 @@ fn ensure_node(db: &mut CanDatabase, name: &str) -> Option<CanNodeKey> {
     }
 }
 
+/// Ensures a message exists, resolving by ID first and falling back to name.
+///
+/// When both ID and name are free, the message is created; otherwise the first
+/// existing match is returned. A suffixed fallback name is used if creation
+/// fails because of collisions.
 fn ensure_message(db: &mut CanDatabase, name: &str, id: u32, dlc: u16) -> CanMessageKey {
     if let Some(k) = db.get_msg_key_by_id(id) {
         return k;
@@ -608,6 +619,7 @@ fn ensure_message(db: &mut CanDatabase, name: &str, id: u32, dlc: u16) -> CanMes
     }
 }
 
+/// Extracts native sender ECU names from AUTOSAR `ADMIN-DATA` blocks.
 fn native_senders_of_pdu(pdu: &Element) -> Vec<String> {
     let Some(admin) = pdu.get_sub_element(ElementName::AdminData) else {
         return Vec::new();
@@ -652,6 +664,7 @@ fn native_senders_of_pdu(pdu: &Element) -> Vec<String> {
     senders
 }
 
+/// Flattens `<DESC>` content and concatenates textual parts into a single string.
 fn extract_desc(elem: &Element) -> Option<String> {
     let desc = elem.get_sub_element(ElementName::Desc)?;
     let mut parts: Vec<String> = Vec::new();
@@ -673,6 +686,7 @@ fn extract_desc(elem: &Element) -> Option<String> {
     }
 }
 
+/// Returns the inner string when the character data is textual.
 fn text_from_cdata(cdata: CharacterData) -> Option<String> {
     match cdata {
         CharacterData::String(s) => Some(s),
@@ -680,6 +694,7 @@ fn text_from_cdata(cdata: CharacterData) -> Option<String> {
     }
 }
 
+/// Converts a `N-PDU` into a synthetic signal occupying the full PDU length.
 fn process_npdu(db: &mut CanDatabase, msg_key: CanMessageKey, pdu: &Element) {
     let msg_name = db
         .get_message_by_key(msg_key)

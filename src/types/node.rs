@@ -24,6 +24,8 @@ pub struct CanNode {
 
 impl CanNode {
     /// Resets all fields to their default values.
+    ///
+    /// Useful for reusing an instance without reallocating backing vectors.
     pub fn clear(&mut self) {
         *self = CanNode::default();
     }

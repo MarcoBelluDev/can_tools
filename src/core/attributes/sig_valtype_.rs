@@ -4,7 +4,10 @@ use crate::types::{
     signal::Signess,
 };
 
-/// `SIG_VALTYPE_ "MsgID" <SignalName> : <Value>;`
+/// Decodes a `SIG_VALTYPE_` line assigning floating-point encodings to a signal.
+///
+/// Shape: `SIG_VALTYPE_ <MsgID> <SignalName> : <Value>;`
+/// where `<Value>` is `1` (IEEE float, 32-bit) or `2` (IEEE double, 64-bit).
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
     let mut parts = line.trim_end_matches(';').split_ascii_whitespace();
 
