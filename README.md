@@ -98,3 +98,6 @@ All public operations return strongly-typed errors (e.g. `DbcParseError`, `DbcSa
 - DBC files are decoded as Windows-1252 with common German characters transliterated to ASCII.
 - Names and lookups are case-insensitive; message IDs are tracked in both decimal and hex.
 - Multiplexing is supported (both multiplexer and multiplexed signals), as are value tables and relational attributes (`BU_SG_REL_`, `BU_BO_REL_`).
+
+## License
+MIT

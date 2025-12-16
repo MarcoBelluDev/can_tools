@@ -3,7 +3,12 @@ name = "can_tools"
 version = "2.1.2"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
-description = "Rust editor for .dbc files"
+description = "Rust editor for CanDatabase. It allows to open and modify CAN database from .dbc and .arxml files."
+license = "MIT"
+repository = "https://github.com/ROMA96x/can_tools"
+keywords = ["dbc", "can", "automotive", "ecu"]
+categories = ["parsing", "automotive", "embedded"]
+homepage = "https://github.com/ROMA96x/can_tools"
 
 readme = "README.md"
 
