@@ -38,7 +38,7 @@ new_key_type! { pub struct CanSignalKey; }
 /// Holds metadata (name, bus type, baud rates, version), the arenas of nodes/messages/signals
 /// (SlotMaps with stable keys), optional order vectors to control iteration order, and
 /// several normalized lookup maps for efficient queries.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone)]
 pub struct CanDatabase {
     // --- General information ---
     /// Human-readable database name (`BA_ "DBName"`), empty if absent.

@@ -13,7 +13,7 @@ use std::{
 /// Maintains the numeric ID (`id`), the normalized hexadecimal ID (`id_hex`),
 /// the `name`, payload length (`byte_length`), and metadata such as `msgtype`, `cycle_time`,
 /// the transmitting nodes (`sender_nodes`), and the list of composing signals (`signals`).
-#[derive(Default, Clone, PartialEq, Debug)]
+#[derive(Default, Clone, PartialEq)]
 pub struct CanMessage {
     /// ID Format (Standard or Extended)
     pub id_format: IdFormat,

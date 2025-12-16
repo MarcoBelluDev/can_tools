@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::{collections::BTreeMap, fmt};
 
 /// Elementary step for extracting a bit field from a payload.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Step {
     /// Source byte index.
     pub(crate) byte_index: u8,
@@ -24,7 +24,7 @@ pub(crate) struct Step {
 ///
 /// Describes position/bit-length, endianness, sign, scaling (factor/offset),
 /// valid range, unit of measure, value tables, and receiver nodes.
-#[derive(Default, Clone, PartialEq, Debug)]
+#[derive(Default, Clone, PartialEq)]
 pub struct CanSignal {
     /// Parent message key.
     pub message: CanMessageKey,

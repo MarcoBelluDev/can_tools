@@ -5,7 +5,7 @@ use crate::types::{
 use std::collections::BTreeMap;
 
 /// Node/ECU defined in the database.
-#[derive(Default, Clone, PartialEq, Debug)]
+#[derive(Default, Clone, PartialEq)]
 pub struct CanNode {
     /// Node/ECU name.
     pub name: String,

@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// Attribute specification pairing an optional definition and a default value.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct AttributeSpec {
     /// Attribute name.
     pub name: String,
