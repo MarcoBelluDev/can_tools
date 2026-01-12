@@ -11,7 +11,6 @@ use crate::types::{
 /// - `BA_DEF_REL_ BU_BO_REL_  "GenMsgTimeoutTime" INT 0 65535;`
 /// - `BA_DEF_REL_ BU_EV_REL_  "SomeEnvRelAttr"   ENUM "Off","On";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-
     // Trim ending ';' and split by ASCII whitespace.
     let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();
 

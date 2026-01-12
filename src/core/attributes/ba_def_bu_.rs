@@ -13,7 +13,6 @@ use crate::types::{
 /// - `BA_DEF_ BU_  "SamplePointMin" FLOAT 50.0 99.9;`
 /// - `BA_DEF_ BU_  "GenNodAutoGenSnd" ENUM "No", "Yes";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-
     // keep a copy to extract quoted string for Enum
     let line_copy: &str = line.trim().trim_end_matches(';');
 

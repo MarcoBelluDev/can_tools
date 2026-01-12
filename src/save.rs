@@ -6,10 +6,9 @@ use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
 use crate::types::attributes::AttrObject;
-use crate::types::signal::CanSignal;
 use crate::types::{
     attributes::{AttrValueType, AttributeSpec, AttributeValue},
-    database::CanDatabase,
+    database::{CanDatabase, CanSignalKey},
     errors::DbcSaveError,
     message::{MuxRole, MuxSelector},
     signal::{Endianness, Signess},
@@ -106,7 +105,7 @@ fn serialize_database<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()>
     }
     write_fmt(out, format_args!("\n\n"))?;
 
-    let independent: Vec<CanSignal> = collect_independent_signals(db);
+    let independent: Vec<CanSignalKey> = collect_independent_signals(db);
     write_independent_signals_as_fake_message(db, &independent, out)?;
     write_fmt(out, format_args!("\n"))?;
 
@@ -709,17 +708,19 @@ fn write_fmt<W: Write>(out: &mut W, args: fmt::Arguments<'_>) -> io::Result<()> 
 }
 
 /// Filters out signals that are not assigned to a message.
-fn collect_independent_signals(db: &CanDatabase) -> Vec<CanSignal> {
-    db.iter_signals()
-        .filter(|s| s.message.is_null())
-        .cloned()
+fn collect_independent_signals(db: &CanDatabase) -> Vec<CanSignalKey> {
+    db.signals_order
+        .iter()
+        .filter_map(|&key| db.get_sig_by_key(key).map(|sig| (key, sig)))
+        .filter(|(_, sig)| sig.message.is_null())
+        .map(|(key, _)| key)
         .collect()
 }
 
 /// Synthesizes a fake message containing independent signals for export.
 fn write_independent_signals_as_fake_message<W: Write>(
     db: &CanDatabase,
-    orphans: &[CanSignal],
+    orphans: &[CanSignalKey],
     out: &mut W,
 ) -> io::Result<()> {
     if orphans.is_empty() {
@@ -734,7 +735,10 @@ fn write_independent_signals_as_fake_message<W: Write>(
         ),
     )?;
 
-    for signal in orphans {
+    for sig_key in orphans {
+        let Some(signal) = db.get_sig_by_key(*sig_key) else {
+            continue;
+        };
         let mux_tag: String = format_mux_tag(signal);
         let endian: char = if matches!(signal.endian, Endianness::Intel) {
             '1'

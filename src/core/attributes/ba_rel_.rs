@@ -10,7 +10,6 @@ use crate::types::{
 /// - `BA_REL_ "GenMsgTimeoutTime" BU_BO_REL_ <NodeName> BO_ <MsgId> <value>;`
 /// - `BA_REL_ "SomeEnvRelAttr"   BU_EV_REL_ <NodeName> EV_ <EnvVarName> <value>;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-
     // ...plus other attributes listed below.
 
     // Trim ending ';' and split by ASCII whitespace.

@@ -13,7 +13,6 @@ use crate::types::{
 /// - `BA_DEF_ BO_  "GenMsgDelayTime" FLOAT 0.0 100.0;`
 /// - `BA_DEF_ BO_  "DiagResponse" ENUM "No", "Yes";`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-
     // keep a copy to extract quoted string for Enum
     let line_copy: &str = line.trim().trim_end_matches(';');
 

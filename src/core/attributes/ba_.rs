@@ -11,7 +11,6 @@ use crate::types::{
 /// - `BA_ "Baudrate" 500000;`
 /// - `BA_ "BaudrateCANFD" 2000000;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-
     // ...plus other attributes listed below.
 
     // Trim ending ';' and split by ASCII whitespace.

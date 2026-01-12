@@ -7,7 +7,6 @@ use crate::types::{
 ///
 /// Format: `BA_DEF_DEF_ "AttrName" <value>;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-
     // Trim ending ';' and split by ASCII whitespace.
     let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();
 

@@ -22,9 +22,9 @@ use crate::{
     types::{
         attributes::{AttrObject, AttrValueType, AttributeSpec, AttributeValue},
         errors::DatabaseError,
-        message::{IdFormat, CanMessage, MuxRole, MuxSelector},
+        message::{CanMessage, IdFormat, MuxRole, MuxSelector},
         node::CanNode,
-        signal::{Endianness, CanSignal, Signess},
+        signal::{CanSignal, Endianness, Signess},
     },
 };
 
@@ -98,7 +98,8 @@ pub struct CanDatabase {
     /// BU_SG_REL_: attributes on (Node, Signal) pairs.
     pub bu_sg_rel_attributes: HashMap<(CanNodeKey, CanSignalKey), BTreeMap<String, AttributeValue>>,
     /// BU_BO_REL_: attributes on (Node, Message) pairs.
-    pub bu_bo_rel_attributes: HashMap<(CanNodeKey, CanMessageKey), BTreeMap<String, AttributeValue>>,
+    pub bu_bo_rel_attributes:
+        HashMap<(CanNodeKey, CanMessageKey), BTreeMap<String, AttributeValue>>,
 }
 
 impl CanDatabase {
@@ -132,7 +133,7 @@ impl CanDatabase {
 
         // push CanNodeKey in relevant variables
         self.nodes_order.push(key);
-        self.node_key_by_name.insert(name.to_lowercase(), key);
+        self.node_key_by_name.insert(name.to_ascii_lowercase(), key);
         Ok(key)
     }
 
@@ -289,7 +290,7 @@ impl CanDatabase {
             signal_message_pairs.push((sig_key, signal.message));
         }
 
-        let new_name_lower = new_node.name.to_lowercase();
+        let new_name_lower = new_node.name.to_ascii_lowercase();
         let new_key: CanNodeKey = self.nodes.insert(new_node);
         self.nodes_order.push(new_key);
         self.node_key_by_name.insert(new_name_lower, new_key);
@@ -333,7 +334,7 @@ impl CanDatabase {
             .remove(node_key)
             .ok_or(DatabaseError::NodeMissing { node_key })?;
 
-        let node_name_lower: String = removed_node.name.to_lowercase();
+        let node_name_lower: String = removed_node.name.to_ascii_lowercase();
 
         self.nodes_order.retain(|&k| k != node_key);
         self.node_key_by_name.remove(&node_name_lower);
@@ -357,7 +358,9 @@ impl CanDatabase {
 
     /// Looks up the `CanNodeKey` for a given node name (case-insensitive).
     pub fn get_node_key_by_name(&self, name: &str) -> Option<CanNodeKey> {
-        self.node_key_by_name.get(&name.to_lowercase()).copied()
+        self.node_key_by_name
+            .get(&name.to_ascii_lowercase())
+            .copied()
     }
 
     /// Returns an immutable reference to the node addressed by the supplied key.
@@ -372,13 +375,13 @@ impl CanDatabase {
 
     /// Returns a `&CanNode` given the name (case-insensitive).
     pub fn get_node_by_name(&self, name: &str) -> Option<&CanNode> {
-        let key: CanNodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
+        let key: CanNodeKey = *self.node_key_by_name.get(&name.to_ascii_lowercase())?;
         self.get_node_by_key(key)
     }
 
     /// Returns a `&mut CanNode` given the name (case-insensitive).
     pub fn get_node_by_name_mut(&mut self, name: &str) -> Option<&mut CanNode> {
-        let key: CanNodeKey = *self.node_key_by_name.get(&name.to_lowercase())?;
+        let key: CanNodeKey = *self.node_key_by_name.get(&name.to_ascii_lowercase())?;
         self.get_node_by_key_mut(key)
     }
 
@@ -444,7 +447,8 @@ impl CanDatabase {
 
         self.msg_key_by_id.insert(id, msg_key);
         self.msg_key_by_hex.insert(id_hex, msg_key);
-        self.msg_key_by_name.insert(name.to_lowercase(), msg_key);
+        self.msg_key_by_name
+            .insert(name.to_ascii_lowercase(), msg_key);
 
         self.current_msg = Some(msg_key); // set created message as current_msg
         Ok(msg_key)
@@ -459,7 +463,7 @@ impl CanDatabase {
                     message_key: msg_key,
                 })?;
 
-        let msg_name_lower: String = removed_msg.name.to_lowercase();
+        let msg_name_lower: String = removed_msg.name.to_ascii_lowercase();
 
         self.messages_order.retain(|&k| k != msg_key);
         self.msg_key_by_name.remove(&msg_name_lower);
@@ -567,7 +571,9 @@ impl CanDatabase {
 
     /// Looks up the `CanMessageKey` from a case-insensitive message name.
     pub fn get_msg_key_by_name(&self, name: &str) -> Option<CanMessageKey> {
-        self.msg_key_by_name.get(&name.to_lowercase()).copied()
+        self.msg_key_by_name
+            .get(&name.to_ascii_lowercase())
+            .copied()
     }
 
     /// Looks up the `CanMessageKey` by numeric CAN identifier.
@@ -669,7 +675,8 @@ impl CanDatabase {
 
         let sig_key: CanSignalKey = self.signals.insert(sig);
         self.signals_order.push(sig_key);
-        self.sig_key_by_name.insert(name.to_lowercase(), sig_key);
+        self.sig_key_by_name
+            .insert(name.to_ascii_lowercase(), sig_key);
 
         sig_key
     }
@@ -683,7 +690,7 @@ impl CanDatabase {
                     signal_key: sig_key,
                 })?;
 
-        let sig_name_lower: String = removed_sig.name.to_lowercase();
+        let sig_name_lower: String = removed_sig.name.to_ascii_lowercase();
 
         self.signals_order.retain(|&k| k != sig_key);
         self.sig_key_by_name.remove(&sig_name_lower);
@@ -1146,7 +1153,8 @@ impl CanDatabase {
         }
 
         // Rebuild the receiver list for the message (union of the remaining signal receivers).
-        let new_receivers: Vec<CanNodeKey> = if let Some(message) = self.get_message_by_key(msg_key) {
+        let new_receivers: Vec<CanNodeKey> = if let Some(message) = self.get_message_by_key(msg_key)
+        {
             let mut seen: HashSet<CanNodeKey> = HashSet::new();
             let mut ordered: Vec<CanNodeKey> = Vec::new();
             for &sk in &message.signals {
@@ -1171,7 +1179,10 @@ impl CanDatabase {
     }
 
     /// Create a new Signal from an existing one adding "_copy" to the name.
-    pub fn copy_signal(&mut self, source_sig_key: CanSignalKey) -> Result<CanSignalKey, DatabaseError> {
+    pub fn copy_signal(
+        &mut self,
+        source_sig_key: CanSignalKey,
+    ) -> Result<CanSignalKey, DatabaseError> {
         // check that the source node key correspond to a Node
         let (
             src_name,
@@ -1254,7 +1265,9 @@ impl CanDatabase {
 
     /// Looks up the `CanSignalKey` for a case-insensitive signal name.
     pub fn get_sig_key_by_name(&self, name: &str) -> Option<CanSignalKey> {
-        self.sig_key_by_name.get(&name.to_lowercase()).copied()
+        self.sig_key_by_name
+            .get(&name.to_ascii_lowercase())
+            .copied()
     }
 
     /// Returns an immutable reference to a signal given its key.
@@ -1269,13 +1282,13 @@ impl CanDatabase {
 
     /// Returns a `&CanSignal` given the name (case-insensitive).
     pub fn get_signal_by_name(&self, name: &str) -> Option<&CanSignal> {
-        let key: CanSignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
+        let key: CanSignalKey = *self.sig_key_by_name.get(&name.to_ascii_lowercase())?;
         self.get_sig_by_key(key)
     }
 
     /// Returns a `&mut CanSignal` given the name (case-insensitive).
     pub fn get_signal_by_name_mut(&mut self, name: &str) -> Option<&mut CanSignal> {
-        let key: CanSignalKey = *self.sig_key_by_name.get(&name.to_lowercase())?;
+        let key: CanSignalKey = *self.sig_key_by_name.get(&name.to_ascii_lowercase())?;
         self.get_sig_by_key_mut(key)
     }
 
@@ -1828,7 +1841,11 @@ impl CanDatabase {
     ///
     /// Missing/invalid keys are pushed to the end; ties are broken by the key.
     pub fn sort_all_signal_fields(&mut self) {
-        let plans: Vec<(CanSignalKey, Vec<CanNodeKey>, BTreeMap<String, AttributeValue>)> = self
+        let plans: Vec<(
+            CanSignalKey,
+            Vec<CanNodeKey>,
+            BTreeMap<String, AttributeValue>,
+        )> = self
             .signals
             .iter()
             .map(|(sk, sig)| {

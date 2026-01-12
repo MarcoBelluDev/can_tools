@@ -139,11 +139,11 @@ impl CanSignal {
         db: &'a CanDatabase,
         name: &str,
     ) -> Option<&'a CanNode> {
-        let key = name.to_lowercase();
+        let key = name.to_ascii_lowercase();
         self.receiver_nodes
             .iter()
             .filter_map(|&node_key| db.get_node_by_key(node_key))
-            .find(|node| node.name.to_lowercase() == key)
+            .find(|node| node.name.to_ascii_lowercase() == key)
     }
 
     /// Returns a mutable reference to a receiver node by name (case-insensitive).
@@ -152,10 +152,10 @@ impl CanSignal {
         db: &'a mut CanDatabase,
         name: &str,
     ) -> Option<&'a mut CanNode> {
-        let input_name: String = name.to_lowercase();
+        let input_name: String = name.to_ascii_lowercase();
         let nkey = self.receiver_nodes.iter().copied().find(|&node_key| {
             db.get_node_by_key(node_key)
-                .map(|n| n.name.to_lowercase() == input_name)
+                .map(|n| n.name.to_ascii_lowercase() == input_name)
                 .unwrap_or(false)
         })?;
         db.get_node_by_key_mut(nkey)

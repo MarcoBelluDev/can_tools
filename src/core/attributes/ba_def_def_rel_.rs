@@ -7,7 +7,6 @@ use crate::types::{
 ///
 /// Format example: `BA_DEF_DEF_REL_  "GenSigTimeoutTime" 0;`
 pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
-
     // Trim ending ';' and split by ASCII whitespace.
     let mut parts = line.trim().trim_end_matches(';').split_ascii_whitespace();
 
