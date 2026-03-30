@@ -546,8 +546,9 @@ fn process_isignal_ipdu(
 
 /// Ricava le ECU trasmettenti/riceventi dai `<FRAME-PORT-REF>`.
 fn get_rx_tx_ecus(frame_ports: Vec<Element>) -> (Vec<String>, Vec<String>) {
-    let mut sender_ecus = Vec::new();
-    let mut receiver_ecus = Vec::new();
+    let cap = frame_ports.len();
+    let mut sender_ecus = Vec::with_capacity(cap);
+    let mut receiver_ecus = Vec::with_capacity(cap);
     for fp in frame_ports {
         if let Some(CharacterData::Enum(direction)) = fp
             .get_sub_element(ElementName::CommunicationDirection)

@@ -143,8 +143,12 @@ pub(crate) fn decode(db: &mut CanDatabase, line: &str) {
         .to_string();
 
     // 5) receivers (space-separated)
-    let mut receiver_nodes: Vec<CanNodeKey> = Vec::new();
     let recv_opt: Option<&str> = it.next();
+    let mut receiver_nodes: Vec<CanNodeKey> = Vec::with_capacity(
+        recv_opt
+            .map(|r| r.bytes().filter(|&b| b == b',').count() + 1)
+            .unwrap_or(0),
+    );
     if let Some(recv) = recv_opt {
         for node_name in recv.split(",") {
             if let Some(key) = db.get_node_key_by_name(node_name) {

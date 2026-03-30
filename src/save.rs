@@ -174,10 +174,10 @@ fn write_messages<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
                 let min = format_f64(signal.min);
                 let max = format_f64(signal.max);
                 let unit = escape_dbc_string(&signal.unit_of_measurement);
-                let receivers: Vec<String> = signal
+                let receivers: Vec<&str> = signal
                     .receiver_nodes
                     .iter()
-                    .filter_map(|nk| db.get_node_by_key(*nk).map(|node| node.name.clone()))
+                    .filter_map(|nk| db.get_node_by_key(*nk).map(|node| node.name.as_str()))
                     .collect();
                 let receivers_field = if receivers.is_empty() {
                     "Vector__XXX".to_string()
@@ -215,12 +215,12 @@ fn write_messages<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
 /// Emits `BO_TX_BU_` entries describing message transmitters.
 fn write_bo_tx_bu<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
     for message in db.iter_messages() {
-        let mut transmitters: Vec<String> = Vec::new();
+        let mut transmitters: Vec<&str> = Vec::with_capacity(message.sender_nodes.len());
         for nk in &message.sender_nodes {
             if let Some(node) = db.get_node_by_key(*nk)
-                && !transmitters.iter().any(|name| name == &node.name)
+                && !transmitters.iter().any(|&name| name == node.name)
             {
-                transmitters.push(node.name.clone());
+                transmitters.push(&node.name);
             }
         }
 
@@ -238,56 +238,36 @@ fn write_bo_tx_bu<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
 }
 
 /// Outputs attribute definitions for database, node, message, and signal scopes.
+/// Single pass over `attr_spec`, routing each entry into one of four buffers by scope,
+/// then flushing them in canonical DBC order (DB → BU_ → BO_ → SG_).
 fn write_attribute_definitions<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
-    // DB
-    for (name, spec) in db
-        .attr_spec
-        .iter()
-        .filter(|(_, s)| s.type_of_object == AttrObject::Database)
-    {
-        let signature: String = format_attribute_spec(spec);
-        write_fmt(out, format_args!("BA_DEF_ \"{}\" {};\n", name, signature))?;
+    let mut db_defs = String::new();
+    let mut bu_defs = String::new();
+    let mut bo_defs = String::new();
+    let mut sg_defs = String::new();
+
+    for (name, spec) in &db.attr_spec {
+        let signature = format_attribute_spec(spec);
+        match spec.type_of_object {
+            AttrObject::Database => {
+                let _ = writeln!(db_defs, "BA_DEF_ \"{}\" {};", name, signature);
+            }
+            AttrObject::Node => {
+                let _ = writeln!(bu_defs, "BA_DEF_ BU_ \"{}\" {};", name, signature);
+            }
+            AttrObject::Message => {
+                let _ = writeln!(bo_defs, "BA_DEF_ BO_ \"{}\" {};", name, signature);
+            }
+            AttrObject::Signal => {
+                let _ = writeln!(sg_defs, "BA_DEF_ SG_ \"{}\" {};", name, signature);
+            }
+        }
     }
 
-    // BU_
-    for (name, spec) in db
-        .attr_spec
-        .iter()
-        .filter(|(_, s)| s.type_of_object == AttrObject::Node)
-    {
-        let signature: String = format_attribute_spec(spec);
-        write_fmt(
-            out,
-            format_args!("BA_DEF_ BU_ \"{}\" {};\n", name, signature),
-        )?;
-    }
-
-    // BO_
-    for (name, spec) in db
-        .attr_spec
-        .iter()
-        .filter(|(_, s)| s.type_of_object == AttrObject::Message)
-    {
-        let signature: String = format_attribute_spec(spec);
-        write_fmt(
-            out,
-            format_args!("BA_DEF_ BO_ \"{}\" {};\n", name, signature),
-        )?;
-    }
-
-    // SG_
-    for (name, spec) in db
-        .attr_spec
-        .iter()
-        .filter(|(_, s)| s.type_of_object == AttrObject::Signal)
-    {
-        let signature: String = format_attribute_spec(spec);
-        write_fmt(
-            out,
-            format_args!("BA_DEF_ SG_ \"{}\" {};\n", name, signature),
-        )?;
-    }
-
+    out.write_all(db_defs.as_bytes())?;
+    out.write_all(bu_defs.as_bytes())?;
+    out.write_all(bo_defs.as_bytes())?;
+    out.write_all(sg_defs.as_bytes())?;
     Ok(())
 }
 
@@ -408,8 +388,8 @@ fn write_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W) -> io::R
 
 /// Emits `BA_REL_` statements for relation-scoped attribute assignments.
 fn write_relation_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W) -> io::Result<()> {
-    let mut bu_sg_entries: Vec<(String, u32, String, &BTreeMap<String, AttributeValue>)> =
-        Vec::new();
+    let mut bu_sg_entries: Vec<(&str, u32, &str, &BTreeMap<String, AttributeValue>)> =
+        Vec::with_capacity(db.bu_sg_rel_attributes.len());
     for ((node_key, sig_key), attrs) in &db.bu_sg_rel_attributes {
         let (Some(node), Some(signal)) =
             (db.get_node_by_key(*node_key), db.get_sig_by_key(*sig_key))
@@ -422,12 +402,12 @@ fn write_relation_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W)
         let Some(message) = db.get_message_by_key(signal.message) else {
             continue;
         };
-        bu_sg_entries.push((node.name.clone(), message.id, signal.name.clone(), attrs));
+        bu_sg_entries.push((&node.name, message.id, &signal.name, attrs));
     }
     bu_sg_entries.sort_by(|a, b| {
-        a.0.cmp(&b.0)
+        a.0.cmp(b.0)
             .then_with(|| a.1.cmp(&b.1))
-            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.2.cmp(b.2))
     });
 
     for (node_name, msg_id, signal_name, attrs) in bu_sg_entries {
@@ -444,7 +424,8 @@ fn write_relation_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W)
         }
     }
 
-    let mut bu_bo_entries: Vec<(String, u32, &BTreeMap<String, AttributeValue>)> = Vec::new();
+    let mut bu_bo_entries: Vec<(&str, u32, &BTreeMap<String, AttributeValue>)> =
+        Vec::with_capacity(db.bu_bo_rel_attributes.len());
     for ((node_key, msg_key), attrs) in &db.bu_bo_rel_attributes {
         let (Some(node), Some(message)) = (
             db.get_node_by_key(*node_key),
@@ -452,9 +433,9 @@ fn write_relation_attribute_assignments<W: Write>(db: &CanDatabase, out: &mut W)
         ) else {
             continue;
         };
-        bu_bo_entries.push((node.name.clone(), message.id, attrs));
+        bu_bo_entries.push((&node.name, message.id, attrs));
     }
-    bu_bo_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    bu_bo_entries.sort_by(|a, b| a.0.cmp(b.0).then_with(|| a.1.cmp(&b.1)));
 
     for (node_name, msg_id, attrs) in bu_bo_entries {
         for (attr_name, value) in attrs {
@@ -756,10 +737,10 @@ fn write_independent_signals_as_fake_message<W: Write>(
         let unit: String = escape_dbc_string(&signal.unit_of_measurement);
 
         // Receiver: use existing Node receivers, otherwise use AutoNet_XXX
-        let receivers: Vec<String> = signal
+        let receivers: Vec<&str> = signal
             .receiver_nodes
             .iter()
-            .filter_map(|nk| db.get_node_by_key(*nk).map(|n| n.name.clone()))
+            .filter_map(|nk| db.get_node_by_key(*nk).map(|n| n.name.as_str()))
             .collect();
         let receivers_field = if receivers.is_empty() {
             AUTONET_FAKE_NODE.to_string()
