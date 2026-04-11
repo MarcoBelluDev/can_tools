@@ -250,16 +250,16 @@ fn write_attribute_definitions<W: Write>(db: &CanDatabase, out: &mut W) -> io::R
         let signature = format_attribute_spec(spec);
         match spec.type_of_object {
             AttrObject::Database => {
-                let _ = writeln!(db_defs, "BA_DEF_ \"{}\" {};", name, signature);
+                let _ = write!(db_defs, "BA_DEF_ \"{}\" {};\n", name, signature);
             }
             AttrObject::Node => {
-                let _ = writeln!(bu_defs, "BA_DEF_ BU_ \"{}\" {};", name, signature);
+                let _ = write!(bu_defs, "BA_DEF_ BU_ \"{}\" {};\n", name, signature);
             }
             AttrObject::Message => {
-                let _ = writeln!(bo_defs, "BA_DEF_ BO_ \"{}\" {};", name, signature);
+                let _ = write!(bo_defs, "BA_DEF_ BO_ \"{}\" {};\n", name, signature);
             }
             AttrObject::Signal => {
-                let _ = writeln!(sg_defs, "BA_DEF_ SG_ \"{}\" {};", name, signature);
+                let _ = write!(sg_defs, "BA_DEF_ SG_ \"{}\" {};\n", name, signature);
             }
         }
     }
