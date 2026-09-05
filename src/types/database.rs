@@ -250,9 +250,9 @@ impl CanDatabase {
 
             // check that new copy name does not already exist
             let mut copy_counter: u32 = 0;
-            let mut new_name: String = format!("{}_copy", &node.name);
+            let mut new_name: String = format!("{}_copy", node.name);
             while self.get_node_by_name(&new_name).is_some() {
-                new_name = format!("{}_copy{}", &node.name, copy_counter);
+                new_name = format!("{}_copy{}", node.name, copy_counter);
                 copy_counter += 1;
             }
             let mut cloned: CanNode = node.clone();
@@ -516,9 +516,9 @@ impl CanDatabase {
 
         // check that new copy name does not already exist
         let mut copy_counter: u32 = 0;
-        let mut new_name: String = format!("{}_copy", &src_name);
+        let mut new_name: String = format!("{}_copy", src_name);
         while self.get_message_by_name(&new_name).is_some() {
-            new_name = format!("{}_copy{}", &src_name, copy_counter);
+            new_name = format!("{}_copy{}", src_name, copy_counter);
             copy_counter += 1;
         }
 
@@ -1225,9 +1225,9 @@ impl CanDatabase {
 
         // check that new copy name does not already exist
         let mut copy_counter: u32 = 0;
-        let mut new_name: String = format!("{}_copy", &src_name);
+        let mut new_name: String = format!("{}_copy", src_name);
         while self.get_signal_by_name(&new_name).is_some() {
-            new_name = format!("{}_copy{}", &src_name, copy_counter);
+            new_name = format!("{}_copy{}", src_name, copy_counter);
             copy_counter += 1;
         }
 

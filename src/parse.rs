@@ -53,7 +53,7 @@ use crate::types::{
 ///
 pub fn from_dbc_file(path: &str) -> Result<CanDatabase, DbcParseError> {
     // check if provided file has .dbc format
-    if !path.ends_with(".dbc") {
+    if !path.to_lowercase().ends_with(".dbc") {
         return Err(DbcParseError::InvalidExtension {
             path: path.to_string(),
         });
@@ -177,11 +177,7 @@ pub fn from_dbc_file(path: &str) -> Result<CanDatabase, DbcParseError> {
     };
 
     // Read and process each .dbc line
-    loop {
-        let Some(line) = read_decoded_line(&mut reader, &mut raw_line)? else {
-            break;
-        };
-
+    while let Some(line) = read_decoded_line(&mut reader, &mut raw_line)? {
         // Work on a trimmed-start slice to preserve inner spaces elsewhere
         let line_trimmed: &str = line.trim_start();
 
@@ -309,7 +305,7 @@ pub fn from_dbc_file(path: &str) -> Result<CanDatabase, DbcParseError> {
 /// defined `CAN-CLUSTER`s. Each cluster becomes its own database, populated with
 /// known messages, signals, and nodes derived from the frame ports.
 pub fn from_arxml_file(path: &str) -> Result<Vec<CanDatabase>, ArxmlConvertError> {
-    if !path.ends_with(".arxml") {
+    if !path.to_lowercase().ends_with(".arxml") {
         return Err(ArxmlConvertError::InvalidExtension {
             path: path.to_string(),
         });

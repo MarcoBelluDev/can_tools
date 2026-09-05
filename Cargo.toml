@@ -1,6 +1,6 @@
 [package]
 name = "can_tools"
-version = "2.1.4"
+version = "2.1.6"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
 description = "Rust editor for CanDatabase. It allows to open and modify CAN database from .dbc and .arxml files."
@@ -17,7 +17,7 @@ name = "can_tools"
 path = "src/lib.rs"
 
 [dependencies]
-autosar-data = "0.21.1"
+autosar-data = "0.23.0"
 chrono = "0.4.41"
 encoding_rs = "0.8.35"
 serde = { version = "1.0.219", features = ["derive"] }
