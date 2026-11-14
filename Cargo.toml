@@ -1,6 +1,6 @@
 [package]
 name = "can_tools"
-version = "2.1.6"
+version = "2.1.7"
 edition = "2024"
 authors = ["Marco Bellusci <marco.bellusci.dev@gmail.com>"]
 description = "Rust editor for CanDatabase. It allows to open and modify CAN database from .dbc and .arxml files."
@@ -8,7 +8,6 @@ license = "MIT"
 repository = "https://github.com/ROMA96x/can_tools"
 keywords = ["dbc", "can", "automotive", "ecu"]
 categories = ["parsing", "automotive", "embedded"]
-homepage = "https://github.com/ROMA96x/can_tools"
 
 readme = "README.md"
 
@@ -20,6 +19,5 @@ path = "src/lib.rs"
 autosar-data = "0.23.0"
 chrono = "0.4.41"
 encoding_rs = "0.8.35"
-serde = { version = "1.0.219", features = ["derive"] }
 slotmap = "1.1.1"
 thiserror = "2.0.17"
